@@ -1,11 +1,12 @@
 const express = require("express");
-const { adminOnly, protect } = require("../middlewares/authMiddleware");
-const { getUsers, getUserById, deleteUser } = require("../controllers/userController");
+const { protect, masterTrainerOnly, requireRoles } = require("../middlewares/authMiddleware");
+const { getUsers, getUserById, createUser } = require("../controllers/userController");
 
 const router = express.Router();
 
 // User Management Routes
-router.get("/", protect, adminOnly, getUsers); // Get all users (Admin only)
+router.get("/", protect, requireRoles(["master_trainer", "boa", "trainer"]), getUsers); // Get all users (Master Trainer, BOA, and Trainer)
 router.get("/:id", protect, getUserById); // Get a specific user
+router.post("/", protect, createUser); // Create a new user (BOA/Admin)
 
 module.exports = router;

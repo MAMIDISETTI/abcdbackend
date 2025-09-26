@@ -1,0 +1,36 @@
+services:
+  - type: web
+    name: task-manager-backend
+    env: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+      - key: BASE_URL
+        value: https://task-manager-backend.onrender.com
+      - key: MONGODB_URI
+        fromDatabase:
+          name: taskmanager-db
+          property: connectionString
+      - key: JWT_SECRET
+        generateValue: true
+      - key: MAX_FILE_SIZE
+        value: 50MB
+      - key: ALLOWED_FILE_TYPES
+        value: video/mp4,video/avi,video/mov
+      - key: FRONTEND_URL
+        value: https://task-manager-frontend.vercel.app
+      - key: CLOUDINARY_CLOUD_NAME
+        value: your-cloud-name
+      - key: CLOUDINARY_API_KEY
+        value: your-api-key
+      - key: CLOUDINARY_API_SECRET
+        value: your-api-secret
+
+databases:
+  - name: taskmanager-db
+    plan: free
