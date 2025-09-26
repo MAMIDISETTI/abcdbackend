@@ -5,6 +5,7 @@ services:
     plan: free
     buildCommand: npm install
     startCommand: npm start
+    runtime: node-20
     envVars:
       - key: NODE_ENV
         value: production
