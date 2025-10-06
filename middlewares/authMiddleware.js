@@ -1,5 +1,5 @@
 const jwt = require("jsonwebtoken");
-const User = require("../models/User");
+const UserNew = require("../models/UserNew");
 
 // Middleware to protect routes
 const protect = async (req, res, next) => {
@@ -17,8 +17,29 @@ const protect = async (req, res, next) => {
 
         if (token) {
             const decoded = jwt.verify(token, process.env.JWT_SECRET);
-            req.user = await User.findById(decoded.id).select("-password");
-            next();
+            
+            // Try UserNew model first
+            let user = await UserNew.findById(decoded.id).select("-password");
+            
+            // If not found, try old User model
+            if (!user) {
+                const User = require("../models/User");
+                user = await User.findById(decoded.id).select("-password");
+            }
+            
+            if (user) {
+                // Check if user account is active
+                if (user.isActive === false) {
+                    return res.status(403).json({ 
+                        message: "Account is deactivated. Please contact administrator for assistance." 
+                    });
+                }
+                
+                req.user = user;
+                next();
+            } else {
+                res.status(401).json({ message: "User not found" });
+            }
         } else {
             res.status(401).json({ message: "Not authorized, no token" });
         }
@@ -27,18 +48,27 @@ const protect = async (req, res, next) => {
     }
 };
 
-// Middleware for Master Trainer access
-const masterTrainerOnly = (req, res, next) => {
-    if (req.user && req.user.role === "master_trainer") {
+// Middleware for Admin access
+const adminOnly = (req, res, next) => {
+    if (req.user && req.user.role === "admin") {
         next();
     } else {
-        res.status(403).json({ message: "Access denied, master trainer only" });
+        res.status(403).json({ message: "Access denied, admin access required" });
+    }
+};
+
+// Middleware for Master Trainer access
+const masterTrainerOnly = (req, res, next) => {
+    if (req.user && (req.user.role === "master_trainer" || req.user.role === "admin")) {
+        next();
+    } else {
+        res.status(403).json({ message: "Access denied, master trainer access required" });
     }
 };
 
 // Middleware for Trainer access
 const trainerOnly = (req, res, next) => {
-    if (req.user && (req.user.role === "trainer" || req.user.role === "master_trainer")) {
+    if (req.user && (req.user.role === "trainer" || req.user.role === "master_trainer" || req.user.role === "admin")) {
         next();
     } else {
         res.status(403).json({ message: "Access denied, trainer access required" });
@@ -47,7 +77,7 @@ const trainerOnly = (req, res, next) => {
 
 // Middleware for Trainee access
 const traineeOnly = (req, res, next) => {
-    if (req.user && req.user.role === "trainee") {
+    if (req.user && (req.user.role === "trainee" || req.user.role === "admin")) {
         next();
     } else {
         res.status(403).json({ message: "Access denied, trainee access required" });
@@ -56,7 +86,7 @@ const traineeOnly = (req, res, next) => {
 
 // Middleware for BOA access
 const boaOnly = (req, res, next) => {
-    if (req.user && req.user.role === "boa") {
+    if (req.user && (req.user.role === "boa" || req.user.role === "admin")) {
         next();
     } else {
         res.status(403).json({ message: "Access denied, BOA access required" });
@@ -74,4 +104,4 @@ const requireRoles = (roles) => {
     };
 };
 
-module.exports = { protect, masterTrainerOnly, trainerOnly, traineeOnly, boaOnly, requireRoles };
+module.exports = { protect, adminOnly, masterTrainerOnly, trainerOnly, traineeOnly, boaOnly, requireRoles };

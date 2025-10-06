@@ -1,5 +1,5 @@
 const express = require("express");
-const { registerUser, loginUser, getUserProfile, updateUserProfile, changePassword } = require("../controllers/authController");
+const { registerUser, loginUser, getUserProfile, updateUserProfile, changePassword } = require("../controllers/authControllerNew");
 const { protect } = require("../middlewares/authMiddleware");
 const upload = require("../middlewares/uploadMiddleware");
 
@@ -11,6 +11,12 @@ router.post("/login", loginUser);         // Login User
 router.get("/profile", protect, getUserProfile);  // Get User Profile
 router.put("/profile", protect, updateUserProfile); // Update Profile
 router.put("/change-password", protect, changePassword); // Change Password
+
+// Debug: Log all registered routes
+// Test route to verify server is working
+router.get("/test", (req, res) => {
+  res.json({ success: true, message: "Auth routes are working", timestamp: new Date().toISOString() });
+});
 
 router.post("/upload-image", upload.single("image"), (req, res) => {
   if (!req.file) {

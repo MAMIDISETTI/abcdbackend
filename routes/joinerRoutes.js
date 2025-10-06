@@ -32,8 +32,8 @@ router.get('/stats', requireRoles(['boa', 'master_trainer']), getJoinerStats);
 // Get joiner by ID (BOA and Master Trainer only)
 router.get('/:id', requireRoles(['boa', 'master_trainer']), getJoinerById);
 
-// Update joiner (BOA and Master Trainer only)
-router.put('/:id', requireRoles(['boa', 'master_trainer']), updateJoiner);
+// Update joiner (Admin, BOA and Master Trainer only)
+router.put('/:id', requireRoles(['admin', 'boa', 'master_trainer']), updateJoiner);
 
 // Delete joiner (BOA and Master Trainer only)
 router.delete('/:id', requireRoles(['boa', 'master_trainer']), deleteJoiner);

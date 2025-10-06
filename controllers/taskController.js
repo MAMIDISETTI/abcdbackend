@@ -342,7 +342,6 @@ const getUserDashboardData = async (req, res) => {
       status: { $ne: "Completed" },
       dueDate: { $lt: new Date() },
     });
-    
 
     // Task distribution by status
     const taskStatuses = ["Pending", "In Progress", "Completed"];

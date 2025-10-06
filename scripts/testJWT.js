@@ -10,12 +10,9 @@ mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/taskmanag
 
 const testJWT = async () => {
   try {
-    console.log('Testing JWT authentication...');
-    
     // Find a trainer
     const trainer = await User.findOne({ role: 'trainer' });
     if (!trainer) {
-      console.log('No trainer found, creating one...');
       const newTrainer = await User.create({
         author_id: 'TEST_TRAINER_001',
         name: 'Test Trainer',
@@ -25,11 +22,8 @@ const testJWT = async () => {
         department: 'IT',
         assignedTrainees: []
       });
-      console.log('Created trainer:', newTrainer.name);
       trainer = newTrainer;
     }
-    
-    console.log(`Using trainer: ${trainer.name} (${trainer.email})`);
     
     // Create JWT token
     const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
@@ -39,22 +33,12 @@ const testJWT = async () => {
       { expiresIn: '7d' }
     );
     
-    console.log('JWT Token created successfully');
-    console.log('Token length:', token.length);
-    
     // Verify the token
     const decoded = jwt.verify(token, JWT_SECRET);
-    console.log('Token decoded successfully:');
-    console.log('- ID:', decoded.id);
-    console.log('- Role:', decoded.role);
-    console.log('- Expires:', new Date(decoded.exp * 1000));
-    
     // Test if the ID matches
     if (decoded.id.toString() === trainer._id.toString()) {
-      console.log('✅ JWT authentication test passed');
-    } else {
-      console.log('❌ JWT authentication test failed - ID mismatch');
-    }
+      } else {
+      }
     
   } catch (error) {
     console.error('JWT test failed:', error);

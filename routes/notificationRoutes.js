@@ -1,31 +1,27 @@
-const express = require("express");
+const express = require('express');
 const router = express.Router();
-const { protect, requireRoles } = require("../middlewares/authMiddleware");
 const {
   getNotifications,
   getUnreadCount,
   markAsRead,
   markAllAsRead,
-  deleteNotification,
-  createNotification,
-  sendBulkNotifications,
-  getNotificationStats,
-  createSignInNotification
-} = require("../controllers/notificationController");
+  deleteNotification
+} = require('../controllers/notificationController');
+const { protect, trainerOnly, masterTrainerOnly, traineeOnly, boaOnly } = require('../middlewares/authMiddleware');
 
-// General notification routes
-router.get("/", protect, getNotifications);
-router.get("/unread-count", protect, getUnreadCount);
-router.get("/stats", protect, getNotificationStats);
-router.put("/:id/read", protect, markAsRead);
-router.put("/mark-all-read", protect, markAllAsRead);
-router.delete("/:id", protect, deleteNotification);
+// Get notifications for current user
+router.get('/', protect, getNotifications);
 
-// Create notification routes (Master Trainer, Trainer)
-router.post("/create", protect, requireRoles(["master_trainer", "trainer"]), createNotification);
-router.post("/bulk", protect, requireRoles(["master_trainer", "trainer"]), sendBulkNotifications);
+// Get unread count only
+router.get('/unread-count', protect, getUnreadCount);
 
-// Sign-in notification route (Internal use)
-router.post("/sign-in", createSignInNotification);
+// Mark specific notification as read
+router.patch('/:notificationId/read', protect, markAsRead);
+
+// Mark all notifications as read
+router.patch('/mark-all-read', protect, markAllAsRead);
+
+// Delete notification
+router.delete('/:notificationId', protect, deleteNotification);
 
 module.exports = router;

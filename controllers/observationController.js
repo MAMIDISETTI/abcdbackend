@@ -25,8 +25,13 @@ const createObservation = async (req, res) => {
       return res.status(404).json({ message: "Trainer not found" });
     }
 
-    const hasAccess = trainer.assignedTrainees.some(t => t._id.toString() === traineeId);
-    if (!hasAccess) {
+    // Support author_id or ObjectId for traineeId
+    const assignedTrainee = trainer.assignedTrainees.find(t => {
+      const tid = t._id?.toString();
+      const author = t.author_id;
+      return tid === traineeId || author === traineeId;
+    });
+    if (!assignedTrainee) {
       return res.status(403).json({ message: "Access denied" });
     }
 
@@ -46,7 +51,7 @@ const createObservation = async (req, res) => {
 
     const observation = await Observation.create({
       trainer: trainerId,
-      trainee: traineeId,
+      trainee: assignedTrainee._id,
       date: new Date(date),
       culture,
       grooming,
@@ -56,21 +61,26 @@ const createObservation = async (req, res) => {
       recommendations: recommendations || ""
     });
 
-    // Send notification to Master Trainer
-    const masterTrainers = await User.find({ role: "master_trainer" });
-    for (const masterTrainer of masterTrainers) {
-      await Notification.create({
-        recipient: masterTrainer._id,
-        sender: trainerId,
-        title: "New Observation Report",
-        message: `New observation report submitted for trainee`,
-        type: "observation_reminder",
-        relatedEntity: {
-          type: "observation",
-          id: observation._id
-        },
-        priority: "medium"
-      });
+    // Send notification to Master Trainer(s) using unified helper
+    try {
+      const masterTrainers = await User.find({ role: "master_trainer", isActive: true });
+      for (const masterTrainer of masterTrainers) {
+        if (typeof Notification.createNotification === 'function') {
+          await Notification.createNotification({
+            recipientId: masterTrainer._id.toString(),
+            recipientRole: 'master_trainer',
+            type: 'status_update',
+            title: 'New Observation Report',
+            message: 'A new observation report has been submitted by a trainer.',
+            data: { entityType: 'observation', id: observation._id.toString() },
+            priority: 'medium',
+            relatedEntityId: observation._id.toString(),
+            relatedEntityType: 'user'
+          });
+        }
+      }
+    } catch (notifyErr) {
+      
     }
 
     res.status(201).json({
@@ -310,21 +320,26 @@ const submitObservation = async (req, res) => {
     observation.submittedAt = new Date();
     await observation.save();
 
-    // Send notification to Master Trainer
-    const masterTrainers = await User.find({ role: "master_trainer" });
-    for (const masterTrainer of masterTrainers) {
-      await Notification.create({
-        recipient: masterTrainer._id,
-        sender: trainerId,
-        title: "Observation Report Submitted",
-        message: `Observation report has been submitted for review`,
-        type: "observation_reminder",
-        relatedEntity: {
-          type: "observation",
-          id: observation._id
-        },
-        priority: "medium"
-      });
+    // Send notification to Master Trainer(s) using unified helper
+    try {
+      const masterTrainers = await User.find({ role: "master_trainer", isActive: true });
+      for (const masterTrainer of masterTrainers) {
+        if (typeof Notification.createNotification === 'function') {
+          await Notification.createNotification({
+            recipientId: masterTrainer._id.toString(),
+            recipientRole: 'master_trainer',
+            type: 'status_update',
+            title: 'Observation Report Submitted',
+            message: 'An observation report has been submitted for review.',
+            data: { entityType: 'observation', id: observation._id.toString() },
+            priority: 'medium',
+            relatedEntityId: observation._id.toString(),
+            relatedEntityType: 'user'
+          });
+        }
+      }
+    } catch (notifyErr) {
+      
     }
 
     res.json({

@@ -6,13 +6,9 @@ const UserNew = require('../models/UserNew');
 // Migration script to move from duplicated data to reference-based approach
 async function migrateUserData() {
   try {
-    // console.log('Starting user data migration...');
-    
-    // Get all existing users
+    // // Get all existing users
     const users = await User.find({});
-    // console.log(`Found ${users.length} users to migrate`);
-    
-    let migratedCount = 0;
+    // let migratedCount = 0;
     let errorCount = 0;
     
     for (const user of users) {
@@ -61,13 +57,11 @@ async function migrateUserData() {
           });
           
           await joiner.save();
-          // console.log(`Created joiner record for user: ${user.email}`);
-        } else {
+          // } else {
           // Update existing joiner with user ID
           joiner.userId = user._id;
           await joiner.save();
-          // console.log(`Updated joiner record for user: ${user.email}`);
-        }
+          // }
         
         // Create new user record with reference
         const newUser = new UserNew({
@@ -89,19 +83,13 @@ async function migrateUserData() {
         
         await newUser.save();
         migratedCount++;
-        // console.log(`Migrated user: ${user.email}`);
-        
-      } catch (error) {
+        // } catch (error) {
         console.error(`Error migrating user ${user.email}:`, error.message);
         errorCount++;
       }
     }
     
-    // console.log(`Migration completed!`);
-    // console.log(`Successfully migrated: ${migratedCount} users`);
-    // console.log(`Errors: ${errorCount} users`);
-    
-  } catch (error) {
+    // // // } catch (error) {
     console.error('Migration failed:', error);
   }
 }
@@ -109,10 +97,8 @@ async function migrateUserData() {
 // Function to rollback migration (if needed)
 async function rollbackMigration() {
   try {
-    // console.log('Rolling back migration...');
-    await UserNew.deleteMany({});
-    // console.log('Rollback completed');
-  } catch (error) {
+    // await UserNew.deleteMany({});
+    // } catch (error) {
     console.error('Rollback failed:', error);
   }
 }

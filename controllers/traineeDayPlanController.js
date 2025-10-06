@@ -7,18 +7,9 @@ const Notification = require("../models/Notification");
 // @access  Private (Trainee)
 const createTraineeDayPlan = async (req, res) => {
   try {
-    console.log("=== CREATE TRAINEE DAY PLAN START ===");
-    console.log("Request body:", req.body);
-    console.log("User role:", req.user.role);
-    console.log("User ID:", req.user.id);
-    
     // Check if this is a trainer creating day plans for trainees
     const { traineeId, createdBy } = req.body;
     const actualTraineeId = traineeId || req.user.id;
-    
-    console.log("Trainee ID:", traineeId);
-    console.log("Actual Trainee ID:", actualTraineeId);
-    console.log("Created By:", createdBy);
     
     // If traineeId is provided, this means a trainer is creating the day plan
     // Otherwise, it's a trainee creating their own day plan
@@ -30,19 +21,13 @@ const createTraineeDayPlan = async (req, res) => {
 
     const { date, tasks, checkboxes, status = "submitted" } = req.body;
     
-    console.log("Extracted data:", { date, tasks, checkboxes, status });
-    console.log("Date type:", typeof date, "Date value:", date);
-
     // Check if trainee already has a day plan for this date
     const existingPlan = await TraineeDayPlan.findOne({
       trainee: actualTraineeId,
       date: new Date(date)
     });
 
-    console.log("Existing plan check:", existingPlan ? "Found existing plan" : "No existing plan");
-
     if (existingPlan) {
-      console.log("=== EXISTING PLAN FOUND - RETURNING 400 ===");
       return res.status(400).json({ 
         message: "Day plan already exists for this date. Please update the existing plan instead." 
       });
@@ -62,19 +47,10 @@ const createTraineeDayPlan = async (req, res) => {
       createdBy: createdBy || "trainee" // Track who created the plan
     };
     
-    console.log("Creating day plan with data:", dayPlanData);
-    console.log("Checkboxes being saved:", {
-      checkboxes: checkboxes,
-      checkboxesType: typeof checkboxes,
-      checkboxesKeys: Object.keys(checkboxes || {}),
-      checkboxesStringified: JSON.stringify(checkboxes)
-    });
-    
     let traineeDayPlan;
     try {
       traineeDayPlan = await TraineeDayPlan.create(dayPlanData);
-      console.log("Day plan created successfully:", traineeDayPlan._id);
-    } catch (createError) {
+      } catch (createError) {
       console.error("Error creating day plan:", createError);
       console.error("Create error details:", createError.message);
       return res.status(400).json({ 
@@ -105,8 +81,7 @@ const createTraineeDayPlan = async (req, res) => {
             priority: "medium"
           });
         } else {
-          console.log("No assigned trainer found for trainee");
-        }
+          }
       } catch (notificationError) {
         console.error("Error creating notification:", notificationError);
         // Don't fail the entire request if notification fails
@@ -130,9 +105,71 @@ const createTraineeDayPlan = async (req, res) => {
 // @access  Private (Trainee, Trainer)
 const getTraineeDayPlans = async (req, res) => {
   try {
-    const { status, startDate, endDate, page = 1, limit = 20, traineeId } = req.query;
+    const { status, startDate, endDate, page = 1, limit = 20, traineeId, role, stats, date, details } = req.query;
     
     let query = {};
+    
+    // Handle master trainer requests
+    if (role === 'master_trainer' || req.user.role === 'master_trainer') {
+      if (stats === 'true') {
+        // Return statistics for master trainer
+        const totalPlans = await TraineeDayPlan.countDocuments({});
+        const publishedPlans = await TraineeDayPlan.countDocuments({ status: 'completed' }); // Changed from 'approved' to 'completed'
+        const completedPlans = await TraineeDayPlan.countDocuments({ status: 'completed' });
+        const draftPlans = await TraineeDayPlan.countDocuments({ status: 'draft' });
+
+        return res.json({
+          success: true,
+          totalPlans,
+          published: publishedPlans,
+          completed: completedPlans,
+          draft: draftPlans
+        });
+      }
+
+      if (details === 'true' && date) {
+        // Return day plan details for specific date
+        const dateStr = date.toString();
+        
+        // Try a simpler approach - get all day plans and filter by date string
+        const allDayPlans = await TraineeDayPlan.find({})
+          .populate('trainee', 'name email employeeId department');
+        
+        // Filter by date string matching
+        const dayPlans = allDayPlans.filter(plan => {
+          const planDateString = plan.date.toISOString().split('T')[0];
+          return planDateString === dateStr;
+        });
+
+        const formattedPlans = dayPlans.map(plan => ({
+          id: plan._id,
+          traineeName: plan.trainee?.name || 'Unknown',
+          traineeId: plan.trainee?.employeeId || 'N/A',
+          department: plan.trainee?.department || 'N/A',
+          date: plan.date.toISOString().split('T')[0],
+          status: plan.status,
+          tasks: plan.tasks || [],
+          submittedAt: plan.submittedAt || plan.createdAt,
+          approvedAt: plan.approvedAt,
+          completedAt: plan.status === 'completed' ? plan.updatedAt : null
+        }));
+
+        return res.json({
+          success: true,
+          dayPlans: formattedPlans
+        });
+      }
+
+      // Return all trainee day plans for master trainer
+      const dayPlans = await TraineeDayPlan.find({})
+        .populate('trainee', 'name email employeeId department')
+        .sort({ date: -1, submittedAt: -1 });
+
+      return res.json({
+        success: true,
+        dayPlans
+      });
+    }
     
     // If user is a trainee, only show their own day plans
     if (req.user.role === 'trainee') {
@@ -179,19 +216,8 @@ const getTraineeDayPlans = async (req, res) => {
       .skip((page - 1) * limit);
 
     // Debug: Log checkbox data for each plan
-    console.log('=== TRAINEE DAY PLANS DEBUG ===');
     dayPlans.forEach((plan, index) => {
-      console.log(`Plan ${index} (${plan._id}):`, {
-        trainee: plan.trainee?.name,
-        date: plan.date,
-        checkboxes: plan.checkboxes,
-        checkboxesType: typeof plan.checkboxes,
-        checkboxesKeys: Object.keys(plan.checkboxes || {}),
-        tasks: plan.tasks?.map(task => ({ title: task.title, id: task._id }))
       });
-    });
-    console.log('=== END TRAINEE DAY PLANS DEBUG ===');
-
     const total = await TraineeDayPlan.countDocuments(query);
 
     res.json({
@@ -237,6 +263,9 @@ const getTraineeDayPlan = async (req, res) => {
       if (!trainee || trainee.assignedTrainer.toString() !== userId) {
         return res.status(403).json({ message: "Access denied" });
       }
+    } else if (userRole === "master_trainer") {
+      // Master trainers can view any trainee day plan
+      // No additional checks
     }
 
     res.json(dayPlan);
@@ -363,41 +392,27 @@ const submitTraineeDayPlan = async (req, res) => {
 // @access  Private (Trainer)
 const reviewTraineeDayPlan = async (req, res) => {
   try {
-    console.log("=== REVIEW TRAINEE DAY PLAN START ===");
     const { id } = req.params;
     const trainerId = req.user.id;
     const { status, reviewComments } = req.body;
 
-    console.log("Review request:", { id, trainerId, status, reviewComments });
-
     const dayPlan = await TraineeDayPlan.findById(id).populate('trainee', 'assignedTrainer');
     if (!dayPlan) {
-      console.log("Day plan not found");
       return res.status(404).json({ message: "Day plan not found" });
     }
 
-    console.log("Day plan found:", dayPlan._id);
-    console.log("Trainee assigned trainer:", dayPlan.trainee.assignedTrainer);
-    console.log("Current trainer ID:", trainerId);
-    console.log("Are they equal?", dayPlan.trainee.assignedTrainer?.toString() === trainerId);
-
     // Check if this trainer is assigned to the trainee
     if (dayPlan.trainee.assignedTrainer?.toString() !== trainerId) {
-      console.log("Access denied - trainer not assigned to trainee");
       return res.status(403).json({ message: "Access denied" });
     }
 
-    console.log("Status validation:", { status, validStatuses: ["approved", "rejected"] });
     if (!["approved", "rejected"].includes(status)) {
-      console.log("Invalid status provided");
       return res.status(400).json({ 
         message: "Invalid status. Must be 'approved' or 'rejected'" 
       });
     }
 
-    console.log("Day plan status:", dayPlan.status);
     if (dayPlan.status !== "in_progress") {
-      console.log("Day plan status is not 'in_progress'");
       return res.status(400).json({ 
         message: "Only day plans with 'in_progress' status can be reviewed" 
       });
@@ -415,19 +430,27 @@ const reviewTraineeDayPlan = async (req, res) => {
 
     await dayPlan.save();
 
-    // Send notification to trainee
-    await Notification.create({
-      recipient: dayPlan.trainee._id,
-      sender: trainerId,
-      title: `Day Plan ${status.charAt(0).toUpperCase() + status.slice(1)}`,
-      message: `Your day plan for ${dayPlan.date.toLocaleDateString()} has been ${status}`,
-      type: "trainee_day_plan",
-      relatedEntity: {
-        type: "trainee_day_plan",
-        id: dayPlan._id
-      },
-      priority: "medium"
-    });
+    // Send notification to trainee (match Notification schema)
+    try {
+      await Notification.createNotification({
+        recipientId: dayPlan.trainee._id.toString(),
+        recipientRole: 'trainee',
+        type: 'status_update',
+        title: `Day Plan ${status.charAt(0).toUpperCase() + status.slice(1)}`,
+        message: `Your day plan for ${dayPlan.date.toLocaleDateString()} has been ${status}`,
+        data: {
+          entityType: 'trainee_day_plan',
+          id: dayPlan._id.toString(),
+          status
+        },
+        priority: 'medium',
+        relatedEntityId: dayPlan._id.toString(),
+        relatedEntityType: 'user'
+      });
+    } catch (notifyError) {
+      // Do not fail the review due to notification issues
+      console.error('Notification error (reviewTraineeDayPlan):', notifyError?.message);
+    }
 
     res.json({
       message: `Day plan ${status} successfully`,
@@ -482,11 +505,7 @@ const deleteTraineeDayPlan = async (req, res) => {
 const testDayPlans = async (req, res) => {
   try {
     const traineeId = req.user.id;
-    console.log("Testing day plans for trainee:", traineeId);
-    
     const dayPlans = await TraineeDayPlan.find({ trainee: traineeId }).sort({ date: -1 }).limit(5);
-    console.log("Found day plans:", dayPlans);
-    
     res.json({
       message: "Test successful",
       count: dayPlans.length,
@@ -503,18 +522,9 @@ const testDayPlans = async (req, res) => {
 // @access  Private (Trainee)
 const submitEodUpdate = async (req, res) => {
   try {
-    console.log("=== EOD UPDATE START ===");
-    console.log("Request body:", JSON.stringify(req.body, null, 2));
-    console.log("User ID:", req.user.id);
-    
     const traineeId = req.user.id;
-    const { date, tasks, overallRemarks } = req.body;
+    const { date, tasks, overallRemarks, checkboxes: checkboxUpdates } = req.body;
     
-    console.log("Parsed data:");
-    console.log("- Date:", date);
-    console.log("- Tasks:", tasks);
-    console.log("- Overall Remarks:", overallRemarks);
-
     // Find today's day plan
     const dayPlan = await TraineeDayPlan.findOne({
       trainee: traineeId,
@@ -527,9 +537,6 @@ const submitEodUpdate = async (req, res) => {
       });
     }
 
-    console.log("Found day plan:", dayPlan);
-    console.log("Tasks to update:", tasks);
-
     // Update task statuses and remarks using direct assignment
     tasks.forEach(taskUpdate => {
       const taskIndex = taskUpdate.taskIndex;
@@ -537,9 +544,46 @@ const submitEodUpdate = async (req, res) => {
         dayPlan.tasks[taskIndex].status = taskUpdate.status;
         dayPlan.tasks[taskIndex].remarks = taskUpdate.remarks || '';
         dayPlan.tasks[taskIndex].updatedAt = new Date();
-        console.log(`Updated task ${taskIndex}:`, dayPlan.tasks[taskIndex]);
-      }
+        }
     });
+
+    // Apply checkbox completion updates if provided
+    if (Array.isArray(checkboxUpdates) && checkboxUpdates.length > 0) {
+      try {
+        checkboxUpdates.forEach(update => {
+          const taskId = update.taskId;
+          const checkboxId = update.checkboxId;
+          if (!taskId || !checkboxId) return;
+          if (!dayPlan.checkboxes) return;
+          const possibleKeys = [String(taskId), taskId];
+          let taskBoxGroup = null;
+          for (const key of possibleKeys) {
+            if (dayPlan.checkboxes[key]) {
+              taskBoxGroup = dayPlan.checkboxes[key];
+              break;
+            }
+          }
+          if (!taskBoxGroup) return;
+          // taskBoxGroup may be array or object
+          if (Array.isArray(taskBoxGroup)) {
+            const idx = taskBoxGroup.findIndex(c => String(c.id) === String(checkboxId));
+            if (idx >= 0) {
+              taskBoxGroup[idx].checked = !!update.checked;
+              taskBoxGroup[idx].updatedAt = new Date();
+            }
+          } else if (typeof taskBoxGroup === 'object') {
+            const cb = taskBoxGroup[checkboxId] || taskBoxGroup[String(checkboxId)];
+            if (cb) {
+              cb.checked = !!update.checked;
+              cb.updatedAt = new Date();
+              taskBoxGroup[checkboxId] = cb;
+            }
+          }
+        });
+      } catch (cbErr) {
+      
+      }
+    }
 
     // Set EOD update details and change status to under_review
     dayPlan.eodUpdate = {
@@ -551,10 +595,7 @@ const submitEodUpdate = async (req, res) => {
     // Change day plan status to pending
     dayPlan.status = 'pending';
     
-    console.log("Saving day plan with EOD update:", dayPlan);
     const savedDayPlan = await dayPlan.save();
-    console.log("Day plan saved successfully:", savedDayPlan);
-
     // Send notification to trainer
     try {
       const trainee = await User.findById(traineeId).select('assignedTrainer name');
@@ -579,8 +620,6 @@ const submitEodUpdate = async (req, res) => {
 
     // Fetch the updated day plan to verify data was saved
     const updatedDayPlan = await TraineeDayPlan.findById(dayPlan._id);
-    console.log("Retrieved updated day plan:", updatedDayPlan);
-
     res.json({
       message: "EOD update submitted successfully",
       dayPlan: updatedDayPlan
@@ -597,32 +636,22 @@ const submitEodUpdate = async (req, res) => {
 // @access  Private (Trainer)
 const reviewEodUpdate = async (req, res) => {
   try {
-    console.log("=== EOD REVIEW START ===");
     const { id } = req.params;
     const trainerId = req.user.id;
     const { status, reviewComments } = req.body;
 
-    console.log("EOD Review request:", { id, trainerId, status, reviewComments });
-
     const dayPlan = await TraineeDayPlan.findById(id).populate('trainee', 'assignedTrainer name');
     if (!dayPlan) {
-      console.log("Day plan not found");
       return res.status(404).json({ message: "Day plan not found" });
     }
 
-    console.log("Day plan found:", dayPlan._id);
-    console.log("Day plan status:", dayPlan.status);
-    console.log("EOD update status:", dayPlan.eodUpdate?.status);
-
     // Check if this trainer is assigned to the trainee
     if (dayPlan.trainee.assignedTrainer?.toString() !== trainerId) {
-      console.log("Access denied - trainer not assigned to trainee");
       return res.status(403).json({ message: "Access denied" });
     }
 
     // Check if day plan is pending
     if (dayPlan.status !== 'pending') {
-      console.log("Day plan is not pending");
       return res.status(400).json({ 
         message: "Only day plans with pending EOD updates can be reviewed" 
       });
@@ -630,7 +659,6 @@ const reviewEodUpdate = async (req, res) => {
 
     // Validate status
     if (!["approved", "rejected"].includes(status)) {
-      console.log("Invalid status provided");
       return res.status(400).json({ 
         message: "Invalid status. Must be 'approved' or 'rejected'" 
       });
@@ -649,24 +677,29 @@ const reviewEodUpdate = async (req, res) => {
       dayPlan.status = 'rejected';
     }
 
-    console.log("Saving day plan with EOD review:", dayPlan);
     await dayPlan.save();
 
-    // Send notification to trainee
-    await Notification.create({
-      recipient: dayPlan.trainee._id,
-      sender: trainerId,
-      title: `EOD Update ${status.charAt(0).toUpperCase() + status.slice(1)}`,
-      message: `Your end-of-day update for ${dayPlan.date.toLocaleDateString()} has been ${status}`,
-      type: "trainee_day_plan",
-      relatedEntity: {
-        type: "trainee_day_plan",
-        id: dayPlan._id
-      },
-      priority: "medium"
-    });
+    // Send notification to trainee (match Notification schema)
+    try {
+      await Notification.createNotification({
+        recipientId: dayPlan.trainee._id.toString(),
+        recipientRole: 'trainee',
+        type: 'status_update',
+        title: `EOD Update ${status.charAt(0).toUpperCase() + status.slice(1)}`,
+        message: `Your end-of-day update for ${dayPlan.date.toLocaleDateString()} has been ${status}`,
+        data: {
+          entityType: 'trainee_day_plan',
+          id: dayPlan._id.toString(),
+          status
+        },
+        priority: 'medium',
+        relatedEntityId: dayPlan._id.toString(),
+        relatedEntityType: 'user'
+      });
+    } catch (notifyErr) {
+      console.error('Notification error (reviewEodUpdate):', notifyErr?.message);
+    }
 
-    console.log("EOD review completed successfully");
     res.json({
       message: `EOD update ${status} successfully`,
       dayPlan

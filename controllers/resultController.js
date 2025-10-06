@@ -9,8 +9,6 @@ const getResults = async (req, res) => {
   try {
     const { examType, authorId, page = 1, limit = 10 } = req.query;
     
-    // console.log('Fetching results with query params:', { examType, authorId, page, limit });
-    
     let query = {};
     
     // If user is a trainee, automatically filter by their author_id
@@ -40,16 +38,10 @@ const getResults = async (req, res) => {
       }
     }
 
-    // console.log('Query being used:', query);
-
-    // First, let's see what results exist in the database
+    // // First, let's see what results exist in the database
     const allResults = await Result.find({}).select('exam_type author_id trainee_name score').limit(5);
-    // console.log('Sample results in database:', allResults);
-    
-    // Get all unique exam types in the database
+    // // Get all unique exam types in the database
     const uniqueExamTypes = await Result.distinct('exam_type');
-    // console.log('All unique exam types in database:', uniqueExamTypes);
-
     const results = await Result.find(query)
       .sort({ uploaded_at: -1 })
       .limit(limit * 1)
@@ -63,19 +55,9 @@ const getResults = async (req, res) => {
       const trainee = await User.findOne({ author_id: result.author_id }).select('assignedTrainer name email');
       let trainerName = result.trainer_name || 'N/A';
       
-      console.log(`Processing result for trainee ${result.author_id}:`, {
-        traineeFound: !!trainee,
-        traineeAssignedTrainer: trainee?.assignedTrainer,
-        existingTrainerName: result.trainer_name
-      });
-      
       // If no trainer_name is set and trainee has an assigned trainer, get trainer name
       if ((!result.trainer_name || result.trainer_name === '') && trainee && trainee.assignedTrainer) {
         const trainer = await User.findById(trainee.assignedTrainer).select('name');
-        console.log(`Looking up trainer by ID ${trainee.assignedTrainer}:`, {
-          trainerFound: !!trainer,
-          trainerName: trainer?.name
-        });
         if (trainer) {
           trainerName = trainer.name;
         }
@@ -90,8 +72,6 @@ const getResults = async (req, res) => {
 
     const total = await Result.countDocuments(query);
 
-    // console.log('Found results:', results.length, 'Total:', total);
-
     res.json({
       success: true,
       results: populatedResults,
@@ -100,7 +80,7 @@ const getResults = async (req, res) => {
       total
     });
   } catch (error) {
-    console.error('Error fetching results:', error);
+    
     res.status(500).json({ success: false, message: "Server error", error: error.message });
   }
 };
@@ -118,7 +98,7 @@ const getResultById = async (req, res) => {
 
     res.json({ success: true, result });
   } catch (error) {
-    console.error('Error fetching result:', error);
+    
     res.status(500).json({ success: false, message: "Server error", error: error.message });
   }
 };
@@ -187,7 +167,7 @@ const createResult = async (req, res) => {
 
     res.status(201).json({ success: true, result });
   } catch (error) {
-    console.error('Error creating result:', error);
+    
     res.status(500).json({ success: false, message: "Server error", error: error.message });
   }
 };
@@ -198,9 +178,6 @@ const createResult = async (req, res) => {
 const bulkUploadResults = async (req, res) => {
   try {
     const { examType, results, config, googleSheetUrl, jsonData } = req.body;
-
-    // console.log('Bulk upload request:', { examType, resultsLength: results?.length, config, googleSheetUrl, jsonData });
-    // console.log('Request user:', { id: req.user?.id, name: req.user?.name, role: req.user?.role });
 
     if (!examType) {
       return res.status(400).json({ 
@@ -231,9 +208,7 @@ const bulkUploadResults = async (req, res) => {
         const resultData = resultsToProcess[i];
         
         // Log the result data for debugging
-        // console.log(`Processing result ${i + 1}:`, resultData);
-
-        // Validate required fields
+        // // Validate required fields
         if (!resultData.author_id) {
           errors.push(`Row ${i + 1}: author_id is required`);
           continue;
@@ -244,7 +219,6 @@ const bulkUploadResults = async (req, res) => {
          
          // If not found and author_id looks truncated, try partial match
          if (!user && resultData.author_id && resultData.author_id.length < 36) {
-           // console.log(`Trying partial match for truncated author_id: ${resultData.author_id}`);
            user = await User.findOne({ 
              author_id: { $regex: `^${resultData.author_id}`, $options: 'i' } 
            });
@@ -261,26 +235,10 @@ const bulkUploadResults = async (req, res) => {
            continue;
          }
 
-         // console.log(`Found trainee user for author_id ${resultData.author_id}:`, {
-         //   name: user.name,
-         //   email: user.email,
-         //   department: user.department,
-         //   role: user.role
-         // });
-
-         // Calculate percentage - handle 0 as a valid score
-         // console.log('=== SCORE PROCESSING ===');
-         // console.log('resultData.score:', resultData.score);
-         // console.log('resultData.score type:', typeof resultData.score);
-         // console.log('resultData.score is null:', resultData.score === null);
-         // console.log('resultData.score is undefined:', resultData.score === undefined);
-         // console.log('resultData.score is empty string:', resultData.score === '');
-         
-         let score = 0;
+         // // Calculate percentage - handle 0 as a valid score
+         // // // // // // let score = 0;
          if (resultData.score !== null && resultData.score !== undefined && resultData.score !== '') {
            score = parseFloat(resultData.score);
-           // console.log('Parsed score:', score);
-           // console.log('isNaN(score):', isNaN(score));
            if (isNaN(score)) {
              score = 0;
            }
@@ -288,12 +246,7 @@ const bulkUploadResults = async (req, res) => {
          const total_marks = parseFloat(resultData.total_marks) || 100;
          const percentage = Math.round((score / total_marks) * 100);
          
-         // console.log('Final score:', score);
-         // console.log('Total marks:', total_marks);
-         // console.log('Percentage:', percentage);
-         // console.log('=== END SCORE PROCESSING ===');
-        
-        // Determine status
+         // // // // // Determine status
         let status = 'failed';
         if (percentage >= 60) {
           status = 'passed';
@@ -333,16 +286,7 @@ const bulkUploadResults = async (req, res) => {
            continue;
          }
          
-         // console.log(`Processing result for user ${user.name}:`, {
-         //   resultData: resultData,
-         //   examType: examType,
-         //   rawExamType: rawExamType,
-         //   finalExamType: finalExamType,
-         //   resultDataExamType: resultData.exam_type,
-         //   resultDataType: resultData.type
-         // });
-         
-         // Generate result name
+         // // Generate result name
          const count = await Result.countDocuments({ exam_type: finalExamType });
          const result_name = `${finalExamType.charAt(0).toUpperCase() + finalExamType.slice(1)}Results${count + 1}`;
 
@@ -356,25 +300,7 @@ const bulkUploadResults = async (req, res) => {
          }
          
          // Create result
-         // console.log(`Creating result for ${user.name} with data:`, {
-         //   author_id: resultData.author_id,
-         //   trainee_name: resultData.trainee_name || user.name,
-         //   email: resultData.email || user.email,
-         //   exam_type: finalExamType,
-         //   result_name,
-         //   score,
-         //   total_marks,
-         //   percentage,
-         //   exam_date: new Date(resultData.exam_date || new Date()),
-         //   uploaded_by: req.user.id,
-         //   status,
-         //   remarks: resultData.remarks || '',
-         //   department: resultData.department || user.department || '',
-         //   trainer_name: trainerName,
-         //   batch_name: resultData.batch_name || ''
-         // });
-         
-         let result;
+         // let result;
          try {
            result = await Result.create({
              author_id: resultData.author_id,
@@ -394,37 +320,18 @@ const bulkUploadResults = async (req, res) => {
              batch_name: resultData.batch_name || ''
            });
            
-           // console.log(`Result created successfully with ID: ${result._id}`);
          } catch (createError) {
-           console.error(`Error creating result for ${user.name}:`, createError);
+          
            errors.push(`Row ${i + 1}: Failed to create result - ${createError.message}`);
            continue;
          }
 
-         // console.log(`Created result for ${user.name}:`, {
-         //   result_name: result_name,
-         //   score: score,
-         //   total_marks: total_marks,
-         //   percentage: percentage,
-         //   status: status
-         // });
-
-         // Add to user's appropriate exam array based on exam type
-         // console.log(`Checking exam type for user ${user.name}:`, {
-         //   finalExamType: finalExamType,
-         //   originalExamType: examType,
-         //   resultDataExamType: resultData.exam_type,
-         //   type: resultData.type,
-         //   allResultDataKeys: Object.keys(resultData)
-         // });
-         
-         // Determine which exam array to add to based on the final exam type
+         // // Add to user's appropriate exam array based on exam type
+         // // Determine which exam array to add to based on the final exam type
          const isFortnightExam = finalExamType.startsWith('fortnight');
          const isDailyExam = finalExamType.startsWith('daily');
          const isCourseExam = finalExamType.startsWith('course');
              
-         // console.log(`Is fortnight exam? ${isFortnightExam} for user ${user.name}`);
-         
          if (isFortnightExam) {
            const examData = {
              resultId: result._id,
@@ -439,9 +346,6 @@ const bulkUploadResults = async (req, res) => {
            };
 
            try {
-             // console.log(`Attempting to add fortnight exam to user ${user.name} (ID: ${user._id})`);
-             // console.log(`Exam data to add:`, examData);
-             
              const updatedUser = await User.findByIdAndUpdate(
                user._id,
                { $push: { fortnightExams: examData } },
@@ -449,15 +353,13 @@ const bulkUploadResults = async (req, res) => {
              );
              
              if (updatedUser) {
-               // console.log(`Successfully added fortnight exam to user ${user.name}'s profile:`, examData);
-               // console.log(`Updated user fortnightExams array length:`, updatedUser.fortnightExams.length);
-               // console.log(`Updated user fortnightExams array:`, updatedUser.fortnightExams);
+               // Success - user updated
              } else {
-               console.error(`Failed to update user ${user.name} - updatedUser is null`);
+              
              }
            } catch (updateError) {
-             console.error(`Error adding fortnight exam to user ${user.name}:`, updateError);
-             console.error(`Update error details:`, updateError.message);
+            
+            
            }
          } else if (isDailyExam) {
            // Add to dailyQuizzes array
@@ -479,7 +381,6 @@ const bulkUploadResults = async (req, res) => {
              { new: true }
            );
 
-           // console.log(`Added daily quiz to user ${user.name}'s profile:`, examData);
          } else if (isCourseExam) {
            // Add to courseLevelExams array
            const examData = {
@@ -500,11 +401,8 @@ const bulkUploadResults = async (req, res) => {
              { new: true }
            );
 
-           // console.log(`Added course-level exam to user ${user.name}'s profile:`, examData);
          } else {
            // Fallback: Add to appropriate array based on request examType
-           // console.log(`No specific exam type match found, using fallback based on request examType: ${examType}`);
-           
            // Re-detect column types for array assignment
            const hasDailyQuizColumn = row.DailyQuizzesResults !== undefined || row.dailyquizzesresults !== undefined;
            const hasCourseLevelColumn = row.CourseLevelExamResults !== undefined || row.courselevelexamresults !== undefined;
@@ -532,9 +430,6 @@ const bulkUploadResults = async (req, res) => {
            };
 
            try {
-             // console.log(`Attempting to add exam to user ${user.name}'s ${targetArray} array (fallback)`);
-             // console.log(`Exam data to add:`, examData);
-             
              const updatedUser = await User.findByIdAndUpdate(
                user._id,
                { $push: { [targetArray]: examData } },
@@ -542,15 +437,13 @@ const bulkUploadResults = async (req, res) => {
              );
              
              if (updatedUser) {
-               // console.log(`Added exam to user ${user.name}'s ${targetArray} array (fallback):`, examData);
-               // console.log(`Updated user ${targetArray} array length:`, updatedUser[targetArray].length);
-               // console.log(`Updated user ${targetArray} array:`, updatedUser[targetArray]);
+               // Success - user updated
              } else {
-               console.error(`Failed to update user ${user.name} - updatedUser is null (fallback)`);
+              
              }
            } catch (updateError) {
-             console.error(`Error adding exam to user ${user.name}'s ${targetArray} array:`, updateError);
-             console.error(`Update error details:`, updateError.message);
+            
+            
            }
          }
 
@@ -581,7 +474,7 @@ const bulkUploadResults = async (req, res) => {
       results: uploadedResults
     });
   } catch (error) {
-    console.error('Error in bulk upload:', error);
+    
     res.status(500).json({ success: false, message: "Server error", error: error.message });
   }
 };
@@ -620,7 +513,7 @@ const updateResult = async (req, res) => {
 
     res.json({ success: true, result });
   } catch (error) {
-    console.error('Error updating result:', error);
+    
     res.status(500).json({ success: false, message: "Server error", error: error.message });
   }
 };
@@ -639,7 +532,7 @@ const deleteResult = async (req, res) => {
 
     res.json({ success: true, message: "Result deleted successfully" });
   } catch (error) {
-    console.error('Error deleting result:', error);
+    
     res.status(500).json({ success: false, message: "Server error", error: error.message });
   }
 };
@@ -650,8 +543,6 @@ const deleteResult = async (req, res) => {
 const validateSheets = async (req, res) => {
   try {
     const { spread_sheet_name, data_sets_to_be_loaded, googleSheetUrl } = req.body;
-
-    // console.log('Results validation request:', { spread_sheet_name, data_sets_to_be_loaded, googleSheetUrl });
 
     if (!spread_sheet_name || !data_sets_to_be_loaded) {
       return res.status(400).json({ 
@@ -668,7 +559,6 @@ const validateSheets = async (req, res) => {
          // Add subsheet and exam type parameters to the URL
          const examType = data_sets_to_be_loaded[0].toLowerCase().replace('results', '').replace('exam', '');
          const urlWithParams = `${googleSheetUrl}${googleSheetUrl.includes('?') ? '&' : '?'}subsheet=${data_sets_to_be_loaded[0]}&examType=${examType}`;
-         // console.log('Fetching results data from Google Sheets:', urlWithParams);
          const response = await axios.get(urlWithParams);
         
         // Check if response is HTML (error page)
@@ -699,53 +589,25 @@ const validateSheets = async (req, res) => {
             sheetData.data_sets_to_be_loaded.includes(data_sets_to_be_loaded[0])) {
           
           const rawData = sheetData.data || [];
-          // console.log('Raw data from Google Sheet:', rawData);
-          // console.log('=== STARTING DATA TRANSFORMATION ===');
-          // console.log('Exam type:', examType);
-          // console.log('Data length:', rawData.length);
-          // console.log('First row sample:', rawData[0]);
-          
-           // Transform the data to match the expected results format
+          // // // // // // Transform the data to match the expected results format
            resultsData = await Promise.all(rawData.map(async (row, index) => {
-             // console.log(`\n=== PROCESSING ROW ${index + 1} ===`);
-             // console.log('Raw row data:', row);
-             
-             // Handle the specific column names from your Google Sheet
+             // // // Handle the specific column names from your Google Sheet
              const authorId = row.Author_id || row.author_id || row.AuthorId;
              const date = row.Date || row.date || row.exam_date;
              const type = row.Type || row.type || row.ExamType || row.exam_type;
              // Try multiple variations of the score column name based on exam type
              let score;
-             // console.log('=== EXAM TYPE DETECTION ===');
-             // console.log('examType parameter:', examType);
-             // console.log('type from row:', type);
-             // console.log('Row data keys:', Object.keys(row));
-             // console.log('=== END EXAM TYPE DETECTION ===');
-             
-             // Smart detection: Check for specific score columns in the data
+             // // // // // // Smart detection: Check for specific score columns in the data
              const hasDailyQuizColumn = row.DailyQuizzesResults !== undefined || row.dailyquizzesresults !== undefined;
              const hasCourseLevelColumn = row.CourseLevelExamResults !== undefined || row.courselevelexamresults !== undefined;
              const hasFortnightColumn = row.FortnightEaxmResults !== undefined || row.FortnightExamResults !== undefined || row.FornightEaxmResults !== undefined;
              
-             // console.log('Column detection:', { hasDailyQuizColumn, hasCourseLevelColumn, hasFortnightColumn });
-             
              if (hasDailyQuizColumn || examType === 'daily' || examType === 'dailyquizzes' || examType === 'dailyquiz') {
-               // console.log('=== DAILY QUIZ SCORE MAPPING ===');
-               // console.log('Row data:', row);
-               // console.log('All row keys:', Object.keys(row));
-               
                // Direct mapping for DailyQuizzesResults (try both cases)
                score = row.DailyQuizzesResults || row.dailyquizzesresults;
-               // console.log('Direct DailyQuizzesResults value:', row.DailyQuizzesResults);
-               // console.log('Direct dailyquizzesresults value:', row.dailyquizzesresults);
-               // console.log('Final score value:', score);
-               // console.log('Score type:', typeof score);
-               
                // If direct mapping fails, try alternative methods
                if (score === undefined || score === null || score === '') {
-                 // console.log('Direct mapping failed, trying alternative methods...');
-                 
-                 // Try to find the score column dynamically
+                 // // Try to find the score column dynamically
                  const possibleScoreColumns = [
                    'DailyQuizzesResults',
                    'dailyquizzesresults',
@@ -769,10 +631,8 @@ const validateSheets = async (req, res) => {
                    'quiz'
                  ];
                  
-                 // console.log('Checking possible score columns:');
-                 possibleScoreColumns.forEach(col => {
-                   // console.log(`  ${col}:`, row[col]);
-                 });
+                 // possibleScoreColumns.forEach(col => {
+                   // });
                  
                  // Find the first non-empty score column
                  const foundColumn = possibleScoreColumns.find(col => 
@@ -784,34 +644,17 @@ const validateSheets = async (req, res) => {
                  
                  if (foundColumn) {
                    score = row[foundColumn];
-                   // console.log(`Found score in column: ${foundColumn} = ${score}`);
                  } else {
                    score = row.score || row.Score;
-                   // console.log(`No specific column found, using generic score: ${score}`);
                  }
                }
                
-               // console.log('Final score value:', score);
-               // console.log('Score type:', typeof score);
-               // console.log('=== END DAILY QUIZ SCORE MAPPING ===');
              } else if (hasCourseLevelColumn || examType === 'course') {
-               // console.log('=== COURSE LEVEL EXAM SCORE MAPPING ===');
-               // console.log('Row data:', row);
-               // console.log('All row keys:', Object.keys(row));
-               // console.log('All row values:', Object.values(row));
-               
                // Direct mapping for CourseLevelExamResults (try both cases)
                score = row.CourseLevelExamResults || row.courselevelexamresults;
-               // console.log('Direct CourseLevelExamResults value:', row.CourseLevelExamResults);
-               // console.log('Direct courselevelexamresults value:', row.courselevelexamresults);
-               // console.log('Final score value:', score);
-               // console.log('Score type:', typeof score);
-               
-               // If direct mapping fails, try alternative methods
+               // // // // // If direct mapping fails, try alternative methods
                if (score === undefined || score === null || score === '') {
-                 // console.log('Direct mapping failed, trying alternative methods...');
-                 
-                 // Try to find the score column dynamically
+                 // // Try to find the score column dynamically
                  const possibleScoreColumns = [
                    'CourseLevelExamResults',
                    'courselevelexamresults',
@@ -833,10 +676,8 @@ const validateSheets = async (req, res) => {
                    'course'
                  ];
                  
-                 // console.log('Checking possible score columns:');
-                 possibleScoreColumns.forEach(col => {
-                   // console.log(`  ${col}:`, row[col]);
-                 });
+                 // possibleScoreColumns.forEach(col => {
+                   // });
                  
                  // Find the first non-empty score column
                  const foundColumn = possibleScoreColumns.find(col => 
@@ -848,18 +689,12 @@ const validateSheets = async (req, res) => {
                  
                  if (foundColumn) {
                    score = row[foundColumn];
-                   // console.log(`Found score in column: ${foundColumn} = ${score}`);
                  } else {
                    score = row.score || row.Score;
-                   // console.log(`No specific column found, using generic score: ${score}`);
                  }
                }
                
-               // console.log('Final score value:', score);
-               // console.log('Score type:', typeof score);
-               // console.log('=== END COURSE LEVEL EXAM SCORE MAPPING ===');
              } else if (hasFortnightColumn || examType === 'fortnight' || examType === 'fornight') {
-               // console.log('=== FORTNIGHT EXAM SCORE MAPPING ===');
                score = row.FortnightEaxmResults || 
                        row.FortnightExamResults || 
                        row.FornightEaxmResults || 
@@ -868,14 +703,9 @@ const validateSheets = async (req, res) => {
                        row['FortnightExamResults'] || 
                        row.score || 
                        row.Score;
-               // console.log('Fortnight score value:', score);
-               // console.log('=== END FORTNIGHT EXAM SCORE MAPPING ===');
              } else {
                // Fallback: try generic score columns
-               // console.log('=== FALLBACK SCORE MAPPING ===');
                score = row.score || row.Score;
-               // console.log('Fallback score value:', score);
-               // console.log('=== END FALLBACK SCORE MAPPING ===');
              }
              
              // Debug: Check all possible score column variations
@@ -891,30 +721,7 @@ const validateSheets = async (req, res) => {
                'Score': row.Score
              };
              
-             // console.log(`Transforming row ${index + 1}:`, { 
-             //   authorId, 
-             //   authorIdType: typeof authorId,
-             //   authorIdLength: authorId?.toString().length,
-             //   date, 
-             //   type,
-             //   score,
-             //   scoreType: typeof score,
-             //   scoreValue: score,
-             //   originalRow: row,
-             //   allKeys: Object.keys(row),
-             //   scoreVariations: scoreVariations,
-             //   allColumnValues: {
-             //     'Author_id': row.Author_id,
-             //     'Date': row.Date,
-             //     'Type': row.Type,
-             //     'FortnightEaxmResults': row.FortnightEaxmResults,
-             //     'FortnightExamResults': row.FortnightExamResults,
-             //     'CourseLevelExamResults': row.CourseLevelExamResults,
-             //     'DailyQuizzesResults': row.DailyQuizzesResults
-             //   }
-             // });
-             
-             // Try to find user during validation to populate trainee_name and email
+             // // Try to find user during validation to populate trainee_name and email
              let trainee_name = '';
              let email = '';
              
@@ -925,7 +732,6 @@ const validateSheets = async (req, res) => {
                  
                  // If not found and author_id looks truncated, try partial match
                  if (!user && authorId.length < 36) {
-                   // console.log(`Trying partial match for truncated author_id: ${authorId}`);
                    user = await User.findOne({ 
                      author_id: { $regex: `^${authorId}`, $options: 'i' } 
                    });
@@ -934,22 +740,14 @@ const validateSheets = async (req, res) => {
                  if (user) {
                    trainee_name = user.name;
                    email = user.email;
-                   // console.log(`Found user during validation: ${user.name} (${user.email}) with author_id: ${user.author_id}`);
                  } else {
-                   // console.log(`User not found during validation for author_id: ${authorId}`);
-                   
                    // Let's also search for any user with similar author_id for debugging
                    const similarUsers = await User.find({ 
                      author_id: { $regex: authorId.substring(0, 8), $options: 'i' } 
                    }).limit(3);
-                   // console.log(`Similar users found:`, similarUsers.map(u => ({ 
-                   //   author_id: u.author_id,
-                   //   name: u.name,
-                   //   email: u.email
-                   // })));
                  }
                } catch (err) {
-                 // console.log(`Error during validation lookup: ${err.message}`);
+                  
                }
              }
              
@@ -962,8 +760,7 @@ const validateSheets = async (req, res) => {
                }
              } else {
                // If no score found, try to find it in the original row data
-               // console.log(`No score found for row ${index + 1}, trying alternative methods...`);
-               let alternativeScore;
+               // let alternativeScore;
                if (examType === 'daily') {
                  alternativeScore = row[Object.keys(row).find(key => 
                    key.toLowerCase().includes('daily') && 
@@ -985,7 +782,6 @@ const validateSheets = async (req, res) => {
                  if (isNaN(parsedScore)) {
                    parsedScore = 0;
                  }
-                 // console.log(`Found alternative score: ${parsedScore}`);
                }
              }
 
@@ -1003,16 +799,9 @@ const validateSheets = async (req, res) => {
                batch_name: ''
              };
              
-             // console.log(`=== FINAL TRANSFORMED DATA FOR ROW ${index + 1} ===`);
-             // console.log('Original score from mapping:', score);
-             // console.log('Parsed score:', parsedScore);
-             // console.log('Final transformed data:', transformedData);
-             // console.log('=== END FINAL TRANSFORMED DATA ===');
-             
              return transformedData;
            }));
-          
-          // console.log('Successfully fetched and transformed results data:', resultsData.length, 'records');
+        
         } else {
           return res.status(400).json({
             success: false,
@@ -1025,7 +814,7 @@ const validateSheets = async (req, res) => {
           });
         }
       } catch (error) {
-        console.error('Error fetching from Google Sheets:', error);
+        
         return res.status(400).json({
           success: false,
           message: 'Failed to fetch data from Google Sheets',
@@ -1034,7 +823,6 @@ const validateSheets = async (req, res) => {
       }
     } else {
       // If no Google Sheet URL, return mock data for testing
-      // console.log('No Google Sheet URL provided, using mock data');
       resultsData = [
         {
           author_id: "AUTH001",
@@ -1071,7 +859,7 @@ const validateSheets = async (req, res) => {
       data: resultsData
     });
   } catch (error) {
-    console.error('Error validating sheets:', error);
+    
     res.status(500).json({ 
       success: false, 
       message: "Server error", 
@@ -1104,7 +892,7 @@ const debugUserExams = async (req, res) => {
       }
     });
   } catch (error) {
-    console.error('Error debugging user exams:', error);
+    
     res.status(500).json({ success: false, message: "Server error", error: error.message });
   }
 };
@@ -1264,7 +1052,7 @@ const getExamStatistics = async (req, res) => {
       }
     });
   } catch (error) {
-    console.error('Error fetching exam statistics:', error);
+    
     res.status(500).json({ success: false, message: "Server error", error: error.message });
   }
 };

@@ -10,28 +10,20 @@ mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/taskmanag
 
 const assignTraineeToTrainer = async () => {
   try {
-    console.log('Assigning trainee to trainer...');
-    
     // Find a trainer
     const trainer = await User.findOne({ role: 'trainer' });
     if (!trainer) {
-      console.log('No trainer found');
       return;
     }
     
     // Find a trainee
     const trainee = await User.findOne({ role: 'trainee' });
     if (!trainee) {
-      console.log('No trainee found');
       return;
     }
     
-    console.log(`Trainer: ${trainer.name} (${trainer.author_id})`);
-    console.log(`Trainee: ${trainee.name} (${trainee.author_id})`);
-    
     // Check if already assigned
     if (trainee.assignedTrainer) {
-      console.log('Trainee is already assigned to a trainer');
       return;
     }
     
@@ -50,8 +42,6 @@ const assignTraineeToTrainer = async () => {
       status: "active"
     });
     
-    console.log('Assignment created:', assignment._id);
-    
     // Update trainer's assignedTrainees with ObjectId
     await User.findByIdAndUpdate(trainer._id, {
       $addToSet: { assignedTrainees: trainee._id }
@@ -62,8 +52,6 @@ const assignTraineeToTrainer = async () => {
       assignedTrainer: trainer._id
     });
     
-    console.log('Assignment completed successfully!');
-    
     // Verify the assignment
     const updatedTrainer = await User.findById(trainer._id)
       .populate('assignedTrainees', 'name email');
@@ -71,11 +59,7 @@ const assignTraineeToTrainer = async () => {
     const updatedTrainee = await User.findById(trainee._id)
       .populate('assignedTrainer', 'name email');
     
-    console.log(`\nVerification:`);
-    console.log(`Trainer ${updatedTrainer.name} now has ${updatedTrainer.assignedTrainees.length} trainees`);
-    console.log(`Trainee ${updatedTrainee.name} is assigned to ${updatedTrainee.assignedTrainer?.name || 'No one'}`);
-    
-  } catch (error) {
+    } catch (error) {
     console.error('Error assigning trainee to trainer:', error);
   } finally {
     mongoose.connection.close();

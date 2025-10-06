@@ -25,11 +25,10 @@ const validateGoogleSheets = async (req, res) => {
     // If Google Sheet URL is provided, try to fetch data
     if (google_sheet_url && google_sheet_url.trim()) {
       try {
-        // console.log('Fetching data from Google Sheets:', google_sheet_url);
-        const response = await axios.get(google_sheet_url);
+        const gsRes = await axios.get(google_sheet_url);
         
         // Check if response is HTML (error page)
-        if (typeof response.data === 'string' && response.data.includes('<!DOCTYPE html>')) {
+        if (typeof gsRes.data === 'string' && gsRes.data.includes('<!DOCTYPE html>')) {
           return res.status(400).json({
             message: 'Google Sheets URL returned HTML instead of JSON. Please check your Apps Script deployment.',
             received: 'HTML',
@@ -37,7 +36,7 @@ const validateGoogleSheets = async (req, res) => {
           });
         }
 
-        const sheetData = response.data;
+        const sheetData = gsRes.data;
 
         // Check if response is valid JSON object
         if (typeof sheetData !== 'object' || sheetData === null) {
@@ -124,29 +123,14 @@ const bulkUploadJoiners = async (req, res) => {
     }
 
     // Skip Google Sheets validation in direct mode
-    // console.log('Processing bulk upload in direct mode:', { 
-    //   spread_sheet_name, 
-    //   data_sets_to_be_loaded, 
-    //   joiners_count: joiners_data.length,
-    //   user_id: req.user?.id,
-    //   user_role: req.user?.role
-    // });
-
-    // Process each joiner data
+    // // Process each joiner data
     const processedJoiners = [];
     const errors = [];
-
-    // console.log('Processing joiners data:', {
-    //   count: joiners_data.length,
-    //   sample: joiners_data[0]
-    // });
 
     for (let i = 0; i < joiners_data.length; i++) {
       try {
         const joinerData = joiners_data[i];
-        // console.log(`Processing row ${i + 1}:`, joinerData);
-        
-        // Generate author_id
+        // // Generate author_id
         const author_id = generateUUID();
 
         // Helper function to convert empty strings to null
@@ -197,15 +181,7 @@ const bulkUploadJoiners = async (req, res) => {
         };
 
             // Debug: Log the date being processed
-            // console.log(`Row ${i + 1} date processing:`, {
-            //   original_date: joinerData.date_of_joining,
-            //   original_type: typeof joinerData.date_of_joining,
-            //   parsed_date: joinerData.date_of_joining ? new Date(joinerData.date_of_joining) : null,
-            //   parsed_timestamp: joinerData.date_of_joining ? new Date(joinerData.date_of_joining).getTime() : null,
-            //   name: joinerData.candidate_name
-            // });
-
-            // Validate required fields based on your Google Sheet structure
+            // // Validate required fields based on your Google Sheet structure
             if (!joinerData.candidate_name) {
               errors.push(`Row ${i + 1}: candidate_name is required`);
               continue;
@@ -270,41 +246,18 @@ const bulkUploadJoiners = async (req, res) => {
       });
     }
 
-    // Validate data before insertion
-    // console.log('Validating data before insertion...');
-    for (let i = 0; i < processedJoiners.length; i++) {
-      const joiner = processedJoiners[i];
-      // console.log(`Validating joiner ${i + 1}:`, {
-      //   name: joiner.name,
-      //   email: joiner.email,
-      //   phone: joiner.phone,
-      //   department: joiner.department,
-      //   role: joiner.role,
-      //   role_assign: joiner.role_assign,
-      //   joiningDate: joiner.joiningDate,
-      //   author_id: joiner.author_id,
-      //   createdBy: joiner.createdBy
-      // });
-    }
+    // Validate data before insertion (optional per-item validation can be re-enabled if needed)
 
     // Insert all valid joiners
-    // console.log('Attempting to insert joiners:', {
-    //   count: processedJoiners.length,
-    //   sample: processedJoiners[0]
-    // });
-
-    let createdJoiners;
+    // let createdJoiners;
     try {
       // Test with a single joiner first
       if (processedJoiners.length > 0) {
-        // console.log('Testing single joiner insertion first...');
         const testJoiner = new Joiner(processedJoiners[0]);
         await testJoiner.validate();
-        // console.log('Single joiner validation passed');
       }
       
       createdJoiners = await Joiner.insertMany(processedJoiners);
-      // console.log('Successfully inserted joiners:', createdJoiners.length);
     } catch (dbError) {
       console.error('Database insertion error:', dbError);
       console.error('Error name:', dbError.name);
@@ -353,8 +306,7 @@ const testGoogleSheets = async (req, res) => {
       });
     }
 
-    // console.log('Testing URL:', url);
-    const response = await axios.get(url);
+    // const response = await axios.get(url);
     
     res.status(200).json({
       message: 'URL test successful',

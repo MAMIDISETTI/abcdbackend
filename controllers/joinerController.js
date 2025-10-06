@@ -147,9 +147,23 @@ const getJoiners = async (req, res) => {
 // Get joiner by ID
 const getJoinerById = async (req, res) => {
   try {
-    const joiner = await Joiner.findById(req.params.id)
-      .populate('createdBy', 'name email')
-      .populate('userId', 'name email role');
+    // Check if the ID is a valid MongoDB ObjectId (24 hex characters)
+    const isValidObjectId = /^[0-9a-fA-F]{24}$/.test(req.params.id);
+    
+    let joiner;
+    if (isValidObjectId) {
+      // Try to find by _id first if it's a valid ObjectId
+      joiner = await Joiner.findById(req.params.id)
+        .populate('createdBy', 'name email')
+        .populate('userId', 'name email role');
+    }
+    
+    if (!joiner) {
+      // Try to find by author_id (UUID)
+      joiner = await Joiner.findOne({ author_id: req.params.id })
+        .populate('createdBy', 'name email')
+        .populate('userId', 'name email role');
+    }
 
     if (!joiner) {
       return res.status(404).json({
@@ -181,19 +195,32 @@ const updateJoiner = async (req, res) => {
       joiningDate,
       qualification,
       status,
-      notes
+      notes,
+      notJoinedReason
     } = req.body;
 
-    const joiner = await Joiner.findById(req.params.id);
+    // Check if the ID is a valid MongoDB ObjectId (24 hex characters)
+    const isValidObjectId = /^[0-9a-fA-F]{24}$/.test(req.params.id);
+    let joiner;
+    if (isValidObjectId) {
+      // Try to find by _id first if it's a valid ObjectId
+      joiner = await Joiner.findById(req.params.id);
+      }
+    
+    if (!joiner) {
+      // Try to find by author_id (UUID)
+      joiner = await Joiner.findOne({ author_id: req.params.id });
+      }
+    
     if (!joiner) {
       return res.status(404).json({
         message: 'Joiner not found'
       });
     }
-
+    
     // Check if email is being changed and if it already exists
     if (email && email !== joiner.email) {
-      const existingJoiner = await Joiner.findOne({ email, _id: { $ne: req.params.id } });
+      const existingJoiner = await Joiner.findOne({ email, _id: { $ne: joiner._id } });
       if (existingJoiner) {
         return res.status(400).json({
           message: 'Email already exists'
@@ -203,7 +230,7 @@ const updateJoiner = async (req, res) => {
 
     // Update joiner
     const updatedJoiner = await Joiner.findByIdAndUpdate(
-      req.params.id,
+      joiner._id,
       {
         name: name || joiner.name,
         email: email || joiner.email,
@@ -215,7 +242,8 @@ const updateJoiner = async (req, res) => {
         joiningDate: joiningDate ? new Date(joiningDate) : joiner.joiningDate,
         qualification: qualification !== undefined ? qualification : joiner.qualification,
         status: status || joiner.status,
-        notes: notes !== undefined ? notes : joiner.notes
+        notes: notes !== undefined ? notes : joiner.notes,
+        notJoinedReason: notJoinedReason !== undefined ? notJoinedReason : joiner.notJoinedReason
       },
       { new: true, runValidators: true }
     ).populate('createdBy', 'name email')
@@ -226,7 +254,9 @@ const updateJoiner = async (req, res) => {
       joiner: updatedJoiner
     });
   } catch (error) {
+    console.error('=== UPDATE JOINER ERROR ===');
     console.error('Error updating joiner:', error);
+    console.error('Error stack:', error.stack);
     res.status(500).json({
       message: 'Server error',
       error: error.message
@@ -237,7 +267,20 @@ const updateJoiner = async (req, res) => {
 // Delete joiner
 const deleteJoiner = async (req, res) => {
   try {
-    const joiner = await Joiner.findById(req.params.id);
+    // Check if the ID is a valid MongoDB ObjectId (24 hex characters)
+    const isValidObjectId = /^[0-9a-fA-F]{24}$/.test(req.params.id);
+    
+    let joiner;
+    if (isValidObjectId) {
+      // Try to find by _id first if it's a valid ObjectId
+      joiner = await Joiner.findById(req.params.id);
+    }
+    
+    if (!joiner) {
+      // Try to find by author_id (UUID)
+      joiner = await Joiner.findOne({ author_id: req.params.id });
+    }
+
     if (!joiner) {
       return res.status(404).json({
         message: 'Joiner not found'
@@ -249,7 +292,7 @@ const deleteJoiner = async (req, res) => {
       await User.findByIdAndDelete(joiner.userId);
     }
 
-    await Joiner.findByIdAndDelete(req.params.id);
+    await Joiner.findByIdAndDelete(joiner._id);
 
     res.json({
       message: 'Joiner deleted successfully'
@@ -346,7 +389,12 @@ const getJoinerStats = async (req, res) => {
     }
 
     const stats = await Joiner.aggregate([
-      { $match: query },
+      { 
+        $match: { 
+          ...query,
+          status: { $ne: 'inactive' } // Exclude inactive joiners from main stats
+        } 
+      },
       {
         $group: {
           _id: null,
@@ -362,7 +410,12 @@ const getJoinerStats = async (req, res) => {
 
     // Get department breakdown
     const departmentStats = await Joiner.aggregate([
-      { $match: query },
+      { 
+        $match: { 
+          ...query,
+          status: { $ne: 'inactive' } // Exclude inactive joiners
+        } 
+      },
       {
         $group: {
           _id: '$department',
@@ -372,9 +425,14 @@ const getJoinerStats = async (req, res) => {
       { $sort: { count: -1 } }
     ]);
 
-    // Get daily joiners for calendar - use a simpler approach
+    // Get daily joiners for calendar - only show active joiners
     const dailyJoiners = await Joiner.aggregate([
-      { $match: query },
+      { 
+        $match: { 
+          ...query,
+          status: { $ne: 'inactive' } // Exclude inactive joiners
+        } 
+      },
       {
         $group: {
           _id: {
@@ -396,20 +454,36 @@ const getJoinerStats = async (req, res) => {
       }
     ]);
 
+    // Debug: Log joiner status distribution
+    const joinerStatusCounts = await Joiner.aggregate([
+      { $match: query },
+      {
+        $group: {
+          _id: '$status',
+          count: { $sum: 1 }
+        }
+      }
+    ]);
+    console.log('=== JOINER STATUS DEBUG ===');
+    console.log('Query used:', query);
+    console.log('Joiner status distribution:', joinerStatusCounts);
+    
+    // Also log all joiners with their details
+    const allJoiners = await Joiner.find(query).select('name email status accountCreated');
+    console.log('All joiners details:', allJoiners.map(j => ({
+      name: j.name,
+      email: j.email,
+      status: j.status,
+      accountCreated: j.accountCreated
+    })));
+    console.log('=== END JOINER STATUS DEBUG ===');
+
     // Convert to simple YYYY-MM-DD format directly from year/month/day
     const processedDailyJoiners = dailyJoiners.map(item => {
       const year = item.year;
       const month = String(item.month).padStart(2, '0');
       const day = String(item.day).padStart(2, '0');
       const dateString = `${year}-${month}-${day}`;
-      
-      // console.log('Processing joiner date:', {
-      //   year: item.year,
-      //   month: item.month,
-      //   day: item.day,
-      //   dateString: dateString,
-      //   count: item.count
-      // });
       
       return {
         date: dateString,
@@ -419,9 +493,7 @@ const getJoinerStats = async (req, res) => {
 
     // Debug: Log some sample joiners to see their actual dates
     const sampleJoiners = await Joiner.find({}).limit(5).select('candidate_name joiningDate date_of_joining joining_date');
-    // console.log('Sample joiners with dates:', JSON.stringify(sampleJoiners, null, 2));
-
-    // Debug: Test manual date creation for September 25, 26, 27
+    // // Debug: Test manual date creation for September 25, 26, 27
     const testDates = [
       { year: 2025, month: 9, day: 25 },
       { year: 2025, month: 9, day: 26 },
@@ -430,13 +502,9 @@ const getJoinerStats = async (req, res) => {
     
     testDates.forEach(testDate => {
       const dateString = `${testDate.year}-${String(testDate.month).padStart(2, '0')}-${String(testDate.day).padStart(2, '0')}`;
-      // console.log('Test date:', { ...testDate, dateString });
     });
 
     // Debug: Log the daily joiners data
-    // console.log('Raw dailyJoiners from backend:', JSON.stringify(dailyJoiners, null, 2));
-    // console.log('Processed dailyJoiners:', JSON.stringify(processedDailyJoiners, null, 2));
-
     res.json({
       overview: stats[0] || {
         total: 0,

@@ -15,7 +15,7 @@ const UserSchema = new mongoose.Schema(
     profileImageUrl: { type: String, default: null },
     role: { 
       type: String, 
-      enum: ["master_trainer", "trainer", "trainee", "boa"], 
+      enum: ["admin", "master_trainer", "trainer", "trainee", "boa"], 
       required: true 
     },
     // For trainers and trainees
@@ -36,6 +36,29 @@ const UserSchema = new mongoose.Schema(
     isActive: { type: Boolean, default: true },
     lastClockIn: { type: Date, default: null },
     lastClockOut: { type: Date, default: null },
+    
+    // Account management
+    accountStatus: { 
+      type: String, 
+      enum: ["active", "inactive", "suspended", "deactivated"], 
+      default: "active" 
+    },
+    deactivatedAt: { type: Date, default: null },
+    deactivatedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
+    deactivationReason: { type: String, default: null },
+    
+    // Role management
+    roleHistory: [{
+      role: { type: String, required: true },
+      assignedAt: { type: Date, default: Date.now },
+      assignedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
+      reason: { type: String, default: null }
+    }],
+    
+    // Admin invite system
+    invitedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
+    inviteToken: { type: String, default: null },
+    inviteExpiresAt: { type: Date, default: null },
     // Additional fields for trainees
     employeeId: { type: String, unique: true, sparse: true },
     department: { type: String, default: null },

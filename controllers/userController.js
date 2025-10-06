@@ -1,5 +1,6 @@
 const Task = require("../models/Task");
 const User = require("../models/User");
+const UserNew = require("../models/UserNew");
 const bcrypt = require("bcryptjs");
 
 // @desc    Get all users (Admin only)
@@ -7,17 +8,14 @@ const bcrypt = require("bcryptjs");
 // @access  Private (Admin)
 const getUsers = async (req, res) => {
   try {
-    console.log('=== GET USERS START ===');
     const { role, unassigned, email } = req.query;
     
-    console.log("getUsers called with params:", { role, unassigned, email });
-    
-    // Build query object
-    let query = {};
+    // Build query object - default to active users only
+    let query = { isActive: true };
     if (role) {
       query.role = role;
     }
-    // If no role specified, return all users (for BOA dashboard)
+    // If no role specified, return all active users (for BOA dashboard)
     
     // Add email filter if provided
     if (email) {
@@ -30,59 +28,103 @@ const getUsers = async (req, res) => {
         { assignedTrainer: { $exists: false } },
         { assignedTrainer: null }
       ];
-      console.log("Unassigned trainees query:", query);
-    }
+      }
 
-    // Only populate assignedTrainer for trainees when not looking for unassigned ones
-    let users;
+    // Search in both User and UserNew models
+    let users = [];
     try {
-      if (unassigned === 'true' && role === 'trainee') {
-        // For unassigned trainees, don't populate assignedTrainer
-        console.log('Executing unassigned trainees query...');
-        users = await User.find(query).select("-password");
-        console.log(`Query executed successfully, found ${users.length} users`);
-        
-        // Debug: Check what we found
-        if (users.length > 0) {
-          console.log('Debug - Unassigned trainees found:');
-          users.slice(0, 3).forEach((user, index) => {
-            console.log(`  User ${index + 1}: ${user.name}, assignedTrainer = ${user.assignedTrainer}`);
+      // Search in UserNew model first (newer users)
+      let userNewResults = [];
+      userNewResults = await UserNew.find(query)
+        .populate('assignedTrainer', 'name email author_id')
+        .select("-password");
+      
+      // Search in User model (older users)
+      let userResults = [];
+      userResults = await User.find(query)
+        .populate('assignedTrainer', 'name email author_id')
+        .select("-password");
+      
+      // Combine results
+      users = [...userNewResults, ...userResults];
+      
+      // Debug: Check what we found
+      if (users.length > 0) {
+        users.slice(0, 3).forEach((user, index) => {
           });
-        }
-      } else {
-        // For other cases, populate assignedTrainer
-        console.log('Executing query with populate...');
-        users = await User.find(query)
-          .populate('assignedTrainer', 'name email author_id')
-          .select("-password");
-        console.log(`Query with populate executed successfully, found ${users.length} users`);
       }
     } catch (queryError) {
       console.error('Database query error:', queryError);
       throw queryError;
     }
 
-    console.log(`Found ${users.length} users with role: ${role}`);
-    
     // Log trainees with assigned trainers (only when not looking for unassigned)
     if (!(unassigned === 'true' && role === 'trainee')) {
       const traineesWithTrainers = users.filter(user => user.role === 'trainee' && user.assignedTrainer);
-      console.log(`Found ${traineesWithTrainers.length} trainees with assigned trainers:`);
       traineesWithTrainers.forEach(trainee => {
-        console.log(`- ${trainee.name}: assigned to ${trainee.assignedTrainer?.name || 'Unknown'}`);
-      });
+        });
       
       // Debug: Check what assignedTrainer looks like
-      console.log('Debug - Sample assignedTrainer values:');
       users.slice(0, 3).forEach((user, index) => {
         if (user.role === 'trainee') {
-          console.log(`  User ${index + 1}: assignedTrainer = ${user.assignedTrainer}, type = ${typeof user.assignedTrainer}`);
-        }
+          }
       });
     }
 
     // Convert to plain objects for consistency
     const usersWithPopulatedTrainers = users.map(user => user.toObject());
+
+    // Deduplicate across User and UserNew (prefer UserNew when duplicate by email/author_id)
+    const uniqueUsersMap = new Map();
+    for (const u of usersWithPopulatedTrainers) {
+      const key = (u.email || u.author_id || u._id?.toString() || '').toLowerCase();
+      // Prefer newer model document if both exist (UserNew has author_id by schema)
+      if (!uniqueUsersMap.has(key)) {
+        uniqueUsersMap.set(key, u);
+      } else {
+        const existing = uniqueUsersMap.get(key);
+        const preferNew = (u.author_id && !existing.author_id);
+        uniqueUsersMap.set(key, preferNew ? u : existing);
+      }
+    }
+    let uniqueUsers = Array.from(uniqueUsersMap.values());
+
+    // Ensure assignedTrainer is fully populated even when stored from either model
+    uniqueUsers = await Promise.all(uniqueUsers.map(async (u) => {
+      if (u.role === 'trainee' && u.assignedTrainer) {
+        const isPopulatedObject = typeof u.assignedTrainer === 'object' && u.assignedTrainer._id;
+        if (!isPopulatedObject) {
+          const trainerId = u.assignedTrainer.toString();
+          // Try in User, then UserNew
+          let trainerDoc = await User.findById(trainerId).select('name email author_id isActive');
+          if (!trainerDoc) {
+            trainerDoc = await UserNew.findById(trainerId).select('name email author_id isActive');
+          }
+          if (trainerDoc) {
+            u.assignedTrainer = trainerDoc.toObject();
+          }
+        }
+        
+        // Check if the assigned trainer is still active
+        if (u.assignedTrainer && u.assignedTrainer._id) {
+          const trainerId = u.assignedTrainer._id;
+          const activeTrainer = await User.findOne({ _id: trainerId, isActive: true });
+          
+          if (!activeTrainer) {
+            // Trainer is deactivated, clear the assignment and update status
+            u.assignedTrainer = null;
+            u.status = 'pending_assignment';
+            
+            // Update in database
+            await User.findByIdAndUpdate(u._id, { 
+              assignedTrainer: null, 
+              status: 'pending_assignment' 
+            });
+          }
+        }
+      }
+      return u;
+    }));
 
     // Add task counts to each user (only for members)
     let usersWithTaskCounts;
@@ -112,11 +154,9 @@ const getUsers = async (req, res) => {
       );
     } else {
       // For trainers, trainees, and BOA dashboard, return users as-is
-      usersWithTaskCounts = usersWithPopulatedTrainers;
+      usersWithTaskCounts = uniqueUsers;
     }
 
-    console.log(`=== GET USERS SUCCESS ===`);
-    console.log(`Returning ${usersWithTaskCounts.length} users`);
     res.json({ users: usersWithTaskCounts });
   } catch (error) {
     console.error('=== GET USERS ERROR ===');
@@ -155,16 +195,7 @@ const createUser = async (req, res) => {
       tempPassword, passwordChanged
     } = req.body;
 
-    // console.log('createUser called with data:', { 
-    //   name, email, role, phone, department, employeeId, genre, joiningDate, qualification,
-    //   date_of_joining, candidate_name, phone_number, candidate_personal_mail_id,
-    //   top_department_name_as_per_darwinbox, department_name_as_per_darwinbox,
-    //   joining_status, role_type, role_assign, status, accountCreated, accountCreatedAt,
-    //   createdBy, onboardingChecklist, company_allocated_details, dayPlanTasks,
-    //   fortnightExams, dailyQuizzes, courseLevelExams
-    // });
-
-    // Check if user already exists
+    // // Check if user already exists
     const userExists = await User.findOne({ email });
     if (userExists) {
       return res.status(400).json({ message: "User already exists" });
@@ -228,10 +259,7 @@ const createUser = async (req, res) => {
       userData.employeeId = employeeId;
     }
 
-    // console.log('Creating user with accountCreated:', userData.accountCreated, 'tempPassword:', userData.tempPassword);
     const user = await User.create(userData);
-    // console.log('Created user accountCreated:', user.accountCreated, 'tempPassword:', user.tempPassword);
-
     // Return user data without password
     res.status(201).json({
       message: "User created successfully",

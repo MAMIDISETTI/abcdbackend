@@ -10,16 +10,18 @@ const {
   acknowledgeAssignment,
   completeAssignment,
   getAvailableTrainers,
-  getUnassignedTrainees
+  getUnassignedTrainees,
+  syncAssignmentsToUsers
 } = require("../controllers/assignmentController");
 
-// Master Trainer and BOA routes
-router.post("/", protect, requireRoles(["master_trainer", "boa"]), createAssignment);
-router.get("/", protect, requireRoles(["master_trainer", "boa"]), getAssignments);
-router.get("/trainers/available", protect, requireRoles(["master_trainer", "boa"]), getAvailableTrainers);
-router.get("/trainees/unassigned", protect, requireRoles(["master_trainer", "boa"]), getUnassignedTrainees);
-router.put("/:id", protect, requireRoles(["master_trainer", "boa"]), updateAssignment);
-router.put("/:id/complete", protect, requireRoles(["master_trainer", "boa"]), completeAssignment);
+// Admin, Master Trainer and BOA routes
+router.post("/", protect, requireRoles(["admin", "master_trainer", "boa"]), createAssignment);
+router.get("/", protect, requireRoles(["admin", "master_trainer", "boa"]), getAssignments);
+router.get("/trainers/available", protect, requireRoles(["admin", "master_trainer", "boa"]), getAvailableTrainers);
+router.get("/trainees/unassigned", protect, requireRoles(["admin", "master_trainer", "boa"]), getUnassignedTrainees);
+router.post("/sync", protect, requireRoles(["admin", "master_trainer", "boa"]), syncAssignmentsToUsers);
+router.put("/:id", protect, requireRoles(["admin", "master_trainer", "boa"]), updateAssignment);
+router.put("/:id/complete", protect, requireRoles(["admin", "master_trainer", "boa"]), completeAssignment);
 
 // Trainer routes
 router.get("/trainer", protect, trainerOnly, getTrainerAssignment);

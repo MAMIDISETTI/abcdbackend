@@ -1,6 +1,7 @@
 const Allocation = require('../models/Allocation');
 const User = require('../models/User');
 const Campus = require('../models/Campus');
+const mongoose = require('mongoose');
 
 // @desc    Create a new campus allocation
 // @route   POST /api/allocation
@@ -10,14 +11,12 @@ const createAllocation = async (req, res) => {
     const { traineeId, campusId, allocatedDate, status = 'confirmed', notes } = req.body;
     const allocatedBy = req.user.id;
 
-    // Validate trainee exists
-    const trainee = await User.findOne({ 
-      $or: [
-        { _id: traineeId },
-        { author_id: traineeId }
-      ],
-      role: 'trainee'
-    });
+    // Validate trainee exists (support ObjectId and author_id)
+    const traineeOrs = [{ author_id: traineeId }];
+    if (mongoose.Types.ObjectId.isValid(traineeId)) {
+      traineeOrs.push({ _id: traineeId });
+    }
+    const trainee = await User.findOne({ $or: traineeOrs, role: 'trainee' });
 
     if (!trainee) {
       return res.status(400).json({
@@ -26,13 +25,12 @@ const createAllocation = async (req, res) => {
       });
     }
 
-    // Validate campus exists
-    const campus = await Campus.findOne({ 
-      $or: [
-        { _id: campusId },
-        { name: campusId }
-      ]
-    });
+    // Validate campus exists (by _id or name)
+    const campusOrs = [{ name: campusId }];
+    if (mongoose.Types.ObjectId.isValid(campusId)) {
+      campusOrs.push({ _id: campusId });
+    }
+    const campus = await Campus.findOne({ $or: campusOrs });
 
     if (!campus) {
       return res.status(400).json({
@@ -55,8 +53,6 @@ const createAllocation = async (req, res) => {
     }
 
     const traineeIdToStore = trainee.author_id || trainee._id.toString();
-    console.log('Creating allocation with traineeId:', traineeIdToStore, 'for trainee:', trainee.name);
-    
     const allocation = await Allocation.create({
       traineeId: traineeIdToStore,
       campusId: campus._id.toString(),
@@ -67,8 +63,6 @@ const createAllocation = async (req, res) => {
       allocatedBy
     });
     
-    console.log('Allocation created successfully:', allocation);
-
     res.status(201).json({
       success: true,
       message: 'Campus allocation created successfully',
@@ -76,7 +70,7 @@ const createAllocation = async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Error creating allocation:', error);
+    
     res.status(500).json({
       success: false,
       message: 'Failed to create allocation',
@@ -107,8 +101,6 @@ const getAllocations = async (req, res) => {
       const trainee = await User.findById(userId).select('author_id');
       const authorId = trainee?.author_id;
       
-      console.log('Trainee accessing allocations - userId:', userId, 'traineeId:', traineeId, 'authorId:', authorId);
-      
       // Query for both the trainee's _id and author_id to match any stored allocations
       query.$or = [
         { traineeId: userId }, // Match by _id (ObjectId)
@@ -118,8 +110,7 @@ const getAllocations = async (req, res) => {
         { traineeId: traineeId?.toString() } // Match by provided traineeId as string
       ].filter(Boolean); // Remove undefined values
       
-      console.log('Trainee query:', query);
-    } else if (traineeId) {
+      } else if (traineeId) {
       // For non-trainees, filter by traineeId if provided
       query.$or = [
         { traineeId: traineeId },
@@ -132,12 +123,8 @@ const getAllocations = async (req, res) => {
       query.campusId = campusId;
     }
 
-    console.log('Final query for allocations:', JSON.stringify(query, null, 2));
-    
     // First, let's see all allocations in the database for debugging
     const allAllocations = await Allocation.find({}).limit(5);
-    console.log('All allocations in database (first 5):', allAllocations.map(a => ({ id: a._id, traineeId: a.traineeId, campusName: a.campusName })));
-    
     const allocations = await Allocation.find(query)
       .populate('allocatedBy', 'name email')
       .populate('updatedBy', 'name email')
@@ -145,11 +132,14 @@ const getAllocations = async (req, res) => {
       .limit(limit * 1)
       .skip((page - 1) * limit);
 
-    console.log('Found allocations:', allocations.length);
-
     // Get trainee details for each allocation
     const allocationsWithTrainees = await Promise.all(allocations.map(async (allocation) => {
-      const trainee = await User.findById(allocation.traineeId).select('name email employeeId department');
+      const traineeLookupOrs = [];
+      if (mongoose.Types.ObjectId.isValid(allocation.traineeId)) {
+        traineeLookupOrs.push({ _id: allocation.traineeId });
+      }
+      traineeLookupOrs.push({ author_id: allocation.traineeId });
+      const trainee = await User.findOne({ $or: traineeLookupOrs }).select('name email employeeId department');
       return {
         ...allocation.toObject(),
         traineeName: trainee?.name || 'Unknown',
@@ -170,7 +160,7 @@ const getAllocations = async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Error fetching allocations:', error);
+    
     res.status(500).json({
       success: false,
       message: 'Failed to fetch allocations',
@@ -211,7 +201,7 @@ const getAllocationById = async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Error fetching allocation:', error);
+    
     res.status(500).json({
       success: false,
       message: 'Failed to fetch allocation',
@@ -258,7 +248,7 @@ const updateAllocation = async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Error updating allocation:', error);
+    
     res.status(500).json({
       success: false,
       message: 'Failed to update allocation',
@@ -289,7 +279,7 @@ const deleteAllocation = async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Error deleting allocation:', error);
+    
     res.status(500).json({
       success: false,
       message: 'Failed to delete allocation',
@@ -321,7 +311,7 @@ const debugAllocations = async (req, res) => {
       }))
     });
   } catch (error) {
-    console.error('Debug allocations error:', error);
+    
     res.status(500).json({
       success: false,
       message: 'Failed to debug allocations',

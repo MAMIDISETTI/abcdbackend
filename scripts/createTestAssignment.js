@@ -10,12 +10,9 @@ mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/taskmanag
 
 const createTestAssignment = async () => {
   try {
-    console.log('Creating test assignment...');
-    
     // Find or create a trainer
     let trainer = await User.findOne({ role: 'trainer' });
     if (!trainer) {
-      console.log('No trainer found, creating one...');
       trainer = await User.create({
         author_id: 'TEST_TRAINER_001',
         name: 'Test Trainer',
@@ -25,15 +22,12 @@ const createTestAssignment = async () => {
         department: 'IT',
         assignedTrainees: []
       });
-      console.log('Created trainer:', trainer.name);
-    } else {
-      console.log('Using existing trainer:', trainer.name);
-    }
+      } else {
+      }
     
     // Find or create a trainee
     let trainee = await User.findOne({ role: 'trainee' });
     if (!trainee) {
-      console.log('No trainee found, creating one...');
       trainee = await User.create({
         author_id: 'TEST_TRAINEE_001',
         name: 'Test Trainee',
@@ -43,10 +37,8 @@ const createTestAssignment = async () => {
         department: 'IT',
         assignedTrainer: null
       });
-      console.log('Created trainee:', trainee.name);
-    } else {
-      console.log('Using existing trainee:', trainee.name);
-    }
+      } else {
+      }
     
     // Check if assignment already exists
     let assignment = await Assignment.findOne({
@@ -55,7 +47,6 @@ const createTestAssignment = async () => {
     });
     
     if (!assignment) {
-      console.log('Creating assignment...');
       assignment = await Assignment.create({
         masterTrainer: trainer._id,
         trainer: trainer.author_id,
@@ -69,10 +60,8 @@ const createTestAssignment = async () => {
         createdBy: trainer._id,
         status: "active"
       });
-      console.log('Created assignment:', assignment._id);
-    } else {
-      console.log('Assignment already exists:', assignment._id);
-    }
+      } else {
+      }
     
     // Update trainer's assignedTrainees with ObjectId
     await User.findByIdAndUpdate(trainer._id, {
@@ -84,8 +73,6 @@ const createTestAssignment = async () => {
       assignedTrainer: trainer._id
     });
     
-    console.log('Assignment completed successfully!');
-    
     // Verify the assignment
     const updatedTrainer = await User.findById(trainer._id)
       .populate('assignedTrainees', 'name email');
@@ -93,15 +80,9 @@ const createTestAssignment = async () => {
     const updatedTrainee = await User.findById(trainee._id)
       .populate('assignedTrainer', 'name email');
     
-    console.log(`\nVerification:`);
-    console.log(`Trainer ${updatedTrainer.name} now has ${updatedTrainer.assignedTrainees.length} trainees`);
-    console.log(`Trainee ${updatedTrainee.name} is assigned to ${updatedTrainee.assignedTrainer?.name || 'No one'}`);
-    
     if (updatedTrainer.assignedTrainees.length > 0) {
-      console.log('Assigned trainees:');
       updatedTrainer.assignedTrainees.forEach((trainee, index) => {
-        console.log(`  ${index + 1}. ${trainee.name} (${trainee.email})`);
-      });
+        });
     }
     
   } catch (error) {

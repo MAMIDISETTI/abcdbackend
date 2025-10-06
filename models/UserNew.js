@@ -15,7 +15,7 @@ const UserSchema = new mongoose.Schema(
     profileImageUrl: { type: String, default: null },
     role: { 
       type: String, 
-      enum: ["master_trainer", "trainer", "trainee", "boa"], 
+      enum: ["admin", "master_trainer", "trainer", "trainee", "boa"], 
       required: true 
     },
     
@@ -39,14 +39,40 @@ const UserSchema = new mongoose.Schema(
     
     // User status and activity
     isActive: { type: Boolean, default: true },
+    status: { 
+      type: String, 
+      enum: ['active', 'pending_assignment', 'inactive'], 
+      default: 'active' 
+    },
     lastClockIn: { type: Date, default: null },
     lastClockOut: { type: Date, default: null },
     
     // Account creation info
     accountCreatedAt: { type: Date, default: Date.now },
     createdBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
+    
+    // Additional fields for comprehensive user data
+    phone: { type: String, default: null },
+    joiningDate: { type: Date, default: Date.now },
+    genre: { 
+      type: String, 
+      enum: ["male", "female", "other"], 
+      default: null 
+    },
+    qualification: { type: String, default: null },
+    roleAssign: { type: String, default: null },
+    
+    // Department and other organizational info
+    department: { type: String, default: null },
+    
+    // Demo management details
+    demo_managements_details: { type: [mongoose.Schema.Types.Mixed], default: [] },
+    
+    // Password management
+    passwordChanged: { type: Boolean, default: false },
+    tempPassword: { type: String, default: null },
   },
-  { timestamps: true }
+  { timestamps: true, collection: 'users' }
 );
 
 // Virtual to get joiner data
@@ -59,8 +85,11 @@ UserSchema.virtual('joinerData', {
 
 // Method to get full user data with joiner information
 UserSchema.methods.getFullData = async function() {
-  await this.populate('joinerData');
-  return this;
+  await this.populate('joinerId');
+  return {
+    ...this.toObject(),
+    joinerData: this.joinerId
+  };
 };
 
 // Method to update role and handle joiner reference
@@ -79,4 +108,4 @@ UserSchema.statics.createWithJoiner = async function(userData, joinerId) {
   return user.save();
 };
 
-module.exports = mongoose.model("User", UserSchema);
+module.exports = mongoose.model("UserNew", UserSchema);

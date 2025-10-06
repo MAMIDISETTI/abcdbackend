@@ -1,5 +1,6 @@
 const mongoose = require("mongoose");
 const User = require("../models/User");
+const UserNew = require("../models/UserNew");
 const Attendance = require("../models/Attendance");
 const DayPlan = require("../models/DayPlan");
 const TraineeDayPlan = require("../models/TraineeDayPlan");
@@ -25,15 +26,33 @@ const getMasterTrainerDashboard = async (req, res) => {
       $lte: endDate ? new Date(endDate) : defaultEndDate
     };
 
-    // Get all trainers and their assignments
-    const trainers = await User.find({ role: "trainer" })
+    // Get all trainers from both schemas and merge/dedupe
+    const trainersUser = await User.find({ role: "trainer", isActive: true })
       .populate('assignedTrainees', 'name email employeeId department lastClockIn lastClockOut')
-      .select('name email department assignedTrainees createdAt');
+      .select('name email department assignedTrainees createdAt author_id');
+    const trainersUserNew = await UserNew.find({ role: "trainer", isActive: true })
+      .populate('assignedTrainees', 'name email employeeId department lastClockIn lastClockOut')
+      .select('name email department assignedTrainees createdAt author_id');
+    const trainersMap = new Map();
+    [...trainersUser, ...trainersUserNew].forEach(t => {
+      const k = (t.email || t.author_id || t._id.toString()).toLowerCase();
+      if (!trainersMap.has(k)) trainersMap.set(k, t);
+    });
+    const trainers = Array.from(trainersMap.values());
 
-    // Get all trainees
-    const trainees = await User.find({ role: "trainee" })
-      .populate('assignedTrainer', 'name email')
-      .select('name email employeeId department assignedTrainer lastClockIn lastClockOut joiningDate');
+    // Get all trainees from both schemas and merge/dedupe
+    const traineesUser = await User.find({ role: "trainee", isActive: true })
+      .populate('assignedTrainer', 'name email author_id')
+      .select('name email employeeId department assignedTrainer lastClockIn lastClockOut joiningDate author_id');
+    const traineesUserNew = await UserNew.find({ role: "trainee", isActive: true })
+      .populate('assignedTrainer', 'name email author_id')
+      .select('name email employeeId department assignedTrainer lastClockIn lastClockOut joiningDate author_id');
+    const traineesMap = new Map();
+    [...traineesUser, ...traineesUserNew].forEach(t => {
+      const k = (t.email || t.author_id || t._id.toString()).toLowerCase();
+      if (!traineesMap.has(k)) traineesMap.set(k, t);
+    });
+    const trainees = Array.from(traineesMap.values());
 
     // Get attendance statistics
     const attendanceStats = await Attendance.aggregate([
@@ -146,6 +165,40 @@ const getMasterTrainerDashboard = async (req, res) => {
       }
     ]);
 
+    // Get MCQ exam statistics
+    const MCQDeployment = require('../models/MCQDeployment');
+    const mcqStats = await MCQDeployment.aggregate([
+      {
+        $group: {
+          _id: null,
+          totalExams: { $sum: 1 },
+          activeExams: {
+            $sum: { $cond: [{ $in: ["$status", ["scheduled", "active"]] }, 1, 0] }
+          },
+          currentlyWriting: {
+            $sum: {
+              $size: {
+                $filter: {
+                  input: "$results",
+                  cond: { $eq: ["$$this.status", "in_progress"] }
+                }
+              }
+            }
+          },
+          totalWritten: {
+            $sum: {
+              $size: {
+                $filter: {
+                  input: "$results",
+                  cond: { $eq: ["$$this.status", "completed"] }
+                }
+              }
+            }
+          }
+        }
+      }
+    ]);
+
     res.json({
       overview: {
         totalTrainers: trainers.length,
@@ -180,6 +233,12 @@ const getMasterTrainerDashboard = async (req, res) => {
         completedAssignments: 0,
         totalTraineesAssigned: 0
       },
+      mcqExams: mcqStats[0] || {
+        totalExams: 0,
+        activeExams: 0,
+        currentlyWriting: 0,
+        totalWritten: 0
+      },
       trainers,
       trainees,
       recentActivities
@@ -195,72 +254,65 @@ const getMasterTrainerDashboard = async (req, res) => {
 // @access  Private (Trainer)
 const getTrainerDashboard = async (req, res) => {
   try {
-    console.log('=== TRAINER DASHBOARD START ===');
-    console.log('Request user:', req.user);
     const trainerId = req.user.id;
     const { startDate, endDate } = req.query;
 
-    console.log('Trainer ID:', trainerId);
-    console.log('Trainer ID type:', typeof trainerId);
-    console.log('Date range:', { startDate, endDate });
-    
     // First, let's just try to find the trainer
-    console.log('Looking up trainer...');
     const trainer = await User.findById(trainerId)
       .populate('assignedTrainees', 'name email employeeId department lastClockIn lastClockOut')
       .select('name email assignedTrainees');
 
     if (!trainer) {
-      console.log('Trainer not found');
       return res.status(404).json({ message: "Trainer not found" });
     }
 
-    console.log(`Trainer found: ${trainer.name}`);
-    console.log('Trainer object keys:', Object.keys(trainer.toObject()));
-    console.log('assignedTrainees field:', trainer.assignedTrainees);
-    console.log(`Assigned trainees: ${trainer.assignedTrainees ? trainer.assignedTrainees.length : 0}`);
-    
     // Debug: Check all trainees in database and their assigned trainers
-    console.log('Checking all trainees in database...');
-    const allTrainees = await User.find({ role: 'trainee' }).select('name email assignedTrainer');
-    console.log('All trainees:', allTrainees.length);
+    const allTrainees = await User.find({ role: 'trainee', isActive: true }).select('name email assignedTrainer');
     allTrainees.forEach(trainee => {
-      console.log(`Trainee: ${trainee.name}, Assigned Trainer: ${trainee.assignedTrainer}`);
-    });
+      });
     
     // Find trainees assigned to this trainer
     const traineesAssignedToThisTrainer = allTrainees.filter(trainee => 
       trainee.assignedTrainer && trainee.assignedTrainer.toString() === trainerId
     );
-    console.log(`Trainees assigned to this trainer: ${traineesAssignedToThisTrainer.length}`);
-    
     // Ensure assignedTrainees is an array and initialize if needed
     let assignedTrainees = [];
     
     // Check if assignedTrainees exists and is an array
     if (trainer.assignedTrainees && Array.isArray(trainer.assignedTrainees)) {
-      assignedTrainees = trainer.assignedTrainees;
+      // Filter out deactivated trainees from assignedTrainees
+      const activeAssignedTrainees = [];
+      for (const traineeId of trainer.assignedTrainees) {
+        const trainee = await User.findById(traineeId).select('isActive');
+        if (trainee && trainee.isActive !== false) {
+          activeAssignedTrainees.push(traineeId);
+        }
+      }
+      assignedTrainees = activeAssignedTrainees;
+      
+      // Update the trainer's assignedTrainees field to remove deactivated trainees
+      if (activeAssignedTrainees.length !== trainer.assignedTrainees.length) {
+        await User.findByIdAndUpdate(trainerId, { 
+          $set: { assignedTrainees: activeAssignedTrainees } 
+        });
+      }
     } else {
-      console.log('assignedTrainees field is missing or invalid, initializing...');
       // Initialize the field in the database
       await User.findByIdAndUpdate(trainerId, { 
         $set: { assignedTrainees: [] } 
       });
       assignedTrainees = [];
-      console.log('assignedTrainees field initialized');
-    }
+      }
     
     // If no assigned trainees found in the trainer's assignedTrainees field, 
     // but we found trainees assigned to this trainer, update the trainer's assignedTrainees
     if (assignedTrainees.length === 0 && traineesAssignedToThisTrainer.length > 0) {
-      console.log('Updating trainer assignedTrainees with found trainees...');
       const traineeIds = traineesAssignedToThisTrainer.map(t => t._id);
       await User.findByIdAndUpdate(trainerId, { 
         $set: { assignedTrainees: traineeIds } 
       });
       assignedTrainees = traineesAssignedToThisTrainer;
-      console.log('Updated assignedTrainees with', assignedTrainees.length, 'trainees');
-    }
+      }
     
     // Set default date range (last 30 days) - but let's be more lenient for testing
     const defaultEndDate = new Date();
@@ -273,36 +325,29 @@ const getTrainerDashboard = async (req, res) => {
       $lte: new Date(endDate)
     } : {}; // No date filter if not specified
 
-    console.log('Date filter:', dateFilter);
-
     // First, let's check all day plans to see what we have
-    console.log('Checking all day plans in database...');
     let allDayPlans = [];
     let allTraineeDayPlans = [];
     
     try {
       allDayPlans = await DayPlan.find({}).select('trainer date status title').limit(10);
-      console.log('All DayPlan records (first 10):', allDayPlans);
-    } catch (error) {
+      } catch (error) {
       console.error('Error fetching DayPlan records:', error);
     }
     
     try {
       allTraineeDayPlans = await TraineeDayPlan.find({}).select('createdBy date status').limit(10);
-      console.log('All TraineeDayPlan records (first 10):', allTraineeDayPlans);
-    } catch (error) {
+      } catch (error) {
       console.error('Error fetching TraineeDayPlan records:', error);
     }
     
     // Check day plans for this specific trainer in both models
-    console.log('Checking day plans for trainer:', trainerId);
     let trainerDayPlans = [];
     let trainerTraineeDayPlans = [];
     
     try {
       trainerDayPlans = await DayPlan.find({ trainer: trainerId }).select('trainer date status title');
-      console.log('DayPlan records for this trainer:', trainerDayPlans);
-    } catch (error) {
+      } catch (error) {
       console.error('Error fetching trainer DayPlan records:', error);
     }
     
@@ -310,14 +355,11 @@ const getTrainerDashboard = async (req, res) => {
       trainerTraineeDayPlans = await TraineeDayPlan.find({ 
         createdBy: 'trainer'
       }).select('createdBy date status trainee assignedTrainees');
-      console.log('TraineeDayPlan records for this trainer:', trainerTraineeDayPlans);
-    } catch (error) {
+      } catch (error) {
       console.error('Error fetching trainer TraineeDayPlan records:', error);
     }
     
     // Get day plans created by this trainer from both models
-    console.log('Counting day plans from both models...');
-    
     let dayPlanStats = [];
     let traineeDayPlanStats = [];
     
@@ -346,8 +388,7 @@ const getTrainerDashboard = async (req, res) => {
           }
         }
       ]);
-      console.log('DayPlan stats:', dayPlanStats);
-    } catch (error) {
+      } catch (error) {
       console.error('Error in DayPlan aggregation:', error);
     }
 
@@ -376,8 +417,7 @@ const getTrainerDashboard = async (req, res) => {
           }
         }
       ]);
-      console.log('TraineeDayPlan stats (trainer created):', traineeDayPlanStats);
-    } catch (error) {
+      } catch (error) {
       console.error('Error in TraineeDayPlan aggregation:', error);
     }
 
@@ -410,8 +450,7 @@ const getTrainerDashboard = async (req, res) => {
           }
         ]);
       }
-      console.log('TraineeDayPlan stats (trainee created):', traineeCreatedDayPlanStats);
-    } catch (error) {
+      } catch (error) {
       console.error('Error in TraineeDayPlan (trainee created) aggregation:', error);
     }
     
@@ -431,19 +470,11 @@ const getTrainerDashboard = async (req, res) => {
                  (traineeCreatedDayPlanStats[0]?.draftPlans || 0)
     };
     
-    console.log('Combined stats:', combinedStats);
-
     // Get observations created by this trainer
-    console.log('Counting observations...');
-    
     // Debug: Check all observations in database
     const allObservations = await Observation.find({}).limit(5).select('trainer trainee date status');
-    console.log('All observations in database (first 5):', allObservations);
-    
     // Debug: Check observations for this specific trainer
     const trainerObservations = await Observation.find({ trainer: trainerId }).limit(5).select('trainer trainee date status');
-    console.log('Observations for trainer', trainerId, ':', trainerObservations);
-    
     const observationStats = await Observation.aggregate([
       {
         $match: {
@@ -465,10 +496,7 @@ const getTrainerDashboard = async (req, res) => {
       }
     ]);
 
-    console.log('Observation stats:', observationStats);
-
     // Get recent day plans
-    console.log('Fetching recent day plans...');
     const recentDayPlans = await DayPlan.find({
       trainer: new mongoose.Types.ObjectId(trainerId),
       ...(Object.keys(dateFilter).length > 0 ? { date: dateFilter } : {})
@@ -478,10 +506,7 @@ const getTrainerDashboard = async (req, res) => {
       .limit(5)
       .select('title date status assignedTrainees createdAt');
 
-    console.log('Recent day plans:', recentDayPlans.length);
-
     // Get recent observations
-    console.log('Fetching recent observations...');
     const recentObservations = await Observation.find({
       trainer: new mongoose.Types.ObjectId(trainerId),
       ...(Object.keys(dateFilter).length > 0 ? { date: dateFilter } : {})
@@ -491,18 +516,11 @@ const getTrainerDashboard = async (req, res) => {
       .limit(5)
       .select('trainee date status rating comments createdAt');
 
-    console.log('Recent observations:', recentObservations.length);
-
     // Get unread notifications
-    console.log('Fetching notifications...');
     const unreadNotifications = await Notification.countDocuments({
       recipient: new mongoose.Types.ObjectId(trainerId),
       read: false
     });
-
-    console.log('Unread notifications:', unreadNotifications);
-
-    console.log('=== TRAINER DASHBOARD SUCCESS ===');
 
     res.json({
       overview: {

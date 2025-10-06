@@ -9,8 +9,6 @@ mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/taskmanag
 
 const fixTrainerAssignedTrainees = async () => {
   try {
-    console.log('Fixing trainer assignedTrainees field...');
-    
     // Find all trainers without assignedTrainees field or with undefined/null
     const trainers = await User.find({ 
       role: 'trainer',
@@ -21,10 +19,7 @@ const fixTrainerAssignedTrainees = async () => {
       ]
     });
     
-    console.log(`Found ${trainers.length} trainers without assignedTrainees field`);
-    
     if (trainers.length === 0) {
-      console.log('No trainers need fixing');
       return;
     }
     
@@ -33,20 +28,15 @@ const fixTrainerAssignedTrainees = async () => {
       await User.findByIdAndUpdate(trainer._id, {
         $set: { assignedTrainees: [] }
       });
-      console.log(`Updated trainer: ${trainer.name}`);
-    }
-    
-    console.log('All trainers updated successfully!');
+      }
     
     // Verify the fix
     const updatedTrainers = await User.find({ role: 'trainer' })
       .populate('assignedTrainees', 'name email')
       .select('name email assignedTrainees');
     
-    console.log('\nVerification:');
     updatedTrainers.forEach(trainer => {
-      console.log(`- ${trainer.name}: ${trainer.assignedTrainees.length} assigned trainees`);
-    });
+      });
     
   } catch (error) {
     console.error('Error fixing trainer assignedTrainees:', error);

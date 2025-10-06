@@ -7,30 +7,21 @@ const Notification = require("../models/Notification");
 // @access  Private (Master Trainer, BOA)
 const createAssignment = async (req, res) => {
   try {
-    // console.log('Creating assignment with data:', req.body);
     const assignedById = req.user.id;
     const { trainerId, traineeIds, effectiveDate, notes, instructions } = req.body;
-    // console.log('assignedById:', assignedById, 'trainerId:', trainerId, 'traineeIds:', traineeIds);
-
     // Validate trainer exists and is a trainer
-    // console.log('Looking up trainer with author_id:', trainerId);
     const trainer = await User.findOne({ author_id: trainerId });
-    // console.log('Found trainer:', trainer);
     if (!trainer || trainer.role !== "trainer") {
-      // console.log('Invalid trainer - not found or not trainer role');
       return res.status(400).json({ message: "Invalid trainer" });
     }
 
     // Validate trainees exist and are trainees
-    // console.log('Looking up trainees with author_ids:', traineeIds);
     const trainees = await User.find({
       author_id: { $in: traineeIds },
-      role: "trainee"
+      role: "trainee",
+      isActive: true
     });
-    // console.log('Found trainees:', trainees.length, 'Expected:', traineeIds.length);
-
     if (trainees.length !== traineeIds.length) {
-      // console.log('Some trainees are invalid - found:', trainees.length, 'expected:', traineeIds.length);
       return res.status(400).json({ message: "Some trainees are invalid" });
     }
 
@@ -76,55 +67,57 @@ const createAssignment = async (req, res) => {
     }
 
     // Get trainee ObjectIds for the trainer's assignedTrainees field
-    const traineeObjects = await User.find({ author_id: { $in: allTraineeIds } }).select('_id');
-    const traineeObjectIds = traineeObjects.map(t => t._id);
+    const traineeObjectsUser = await User.find({ author_id: { $in: allTraineeIds } }).select('_id');
+    const traineeObjectIds = traineeObjectsUser.map(t => t._id);
     
-    // Update trainer's assigned trainees with ObjectIds
-    await User.findOneAndUpdate({ author_id: trainerId }, {
+    // Update trainer's assigned trainees with ObjectIds (search in both models)
+    let trainerUpdateResult = await User.findOneAndUpdate({ author_id: trainerId }, {
       assignedTrainees: traineeObjectIds
     });
 
     // Get trainer ObjectId for trainees' assignedTrainer field
-    const trainerObject = await User.findOne({ author_id: trainerId }).select('_id');
+    let trainerObject = await User.findOne({ author_id: trainerId }).select('_id');
     
-    // Update new trainees' assigned trainer (only the newly assigned ones)
-    await User.updateMany(
-      { author_id: { $in: traineeIds } },
-      { assignedTrainer: trainerObject._id }
-    );
+    if (!trainerObject) {
+      return res.status(400).json({ message: "Trainer not found in database" });
+    }
+    
+    // Update new trainees' assigned trainer (only the newly assigned ones) - update both models
+    const update = { assignedTrainer: trainerObject._id, status: 'active' };
+    await User.updateMany({ author_id: { $in: traineeIds } }, update);
 
     // Send notification to trainer
     const isUpdate = existingAssignment ? true : false;
     await Notification.create({
-      recipient: trainerObject._id,
-      sender: assignedById,
+      recipientId: trainerObject._id.toString(),
+      recipientRole: 'trainer',
       title: isUpdate ? "Trainee Assignment Updated" : "New Trainee Assignment",
       message: isUpdate 
         ? `Your assignment has been updated. You now have ${allTraineeIds.length} total trainees (${traineeIds.length} newly assigned)`
         : `You have been assigned ${traineeIds.length} trainees`,
-      type: "assignment",
-      relatedEntity: {
-        type: "assignment",
-        id: assignment._id
-      },
-      priority: "high",
-      requiresAction: true
+      type: "assignment_created",
+      relatedEntityType: "assignment",
+      relatedEntityId: assignment._id.toString(),
+      priority: "high"
     });
 
     // Send notifications to trainees
     for (const traineeId of traineeIds) {
-      await Notification.create({
-        recipient: traineeId,
-        sender: assignedById,
-        title: "Trainer Assignment",
-        message: `You have been assigned to trainer: ${trainer.name}`,
-        type: "assignment",
-        relatedEntity: {
-          type: "assignment",
-          id: assignment._id
-        },
-        priority: "medium"
-      });
+      // Find the trainee ObjectId
+      let traineeObject = await User.findOne({ author_id: traineeId }).select('_id');
+      
+      if (traineeObject) {
+        await Notification.create({
+          recipientId: traineeObject._id.toString(),
+          recipientRole: 'trainee',
+          title: "Trainer Assignment",
+          message: `You have been assigned to trainer: ${trainer.name}`,
+          type: "assignment_created",
+          relatedEntityType: "assignment",
+          relatedEntityId: assignment._id.toString(),
+          priority: "medium"
+        });
+      }
     }
 
     res.status(201).json({
@@ -206,23 +199,15 @@ const getAssignments = async (req, res) => {
 // @access  Private (Trainer)
 const getTrainerAssignment = async (req, res) => {
   try {
-    console.log('=== GET TRAINER ASSIGNMENT START ===');
     const trainerId = req.user.id;
-    console.log('Trainer ID:', trainerId);
-    
     // Get trainer with assigned trainees
-    console.log('Looking up trainer...');
     const trainer = await User.findById(trainerId)
       .populate('assignedTrainees', 'name email employeeId department genre lastClockIn lastClockOut')
       .select('name email assignedTrainees');
     
     if (!trainer) {
-      console.log('Trainer not found');
       return res.status(404).json({ message: "Trainer not found" });
     }
-
-    console.log(`Trainer found: ${trainer.name}`);
-    console.log(`Assigned trainees: ${trainer.assignedTrainees?.length || 0}`);
 
     // Return the trainer data with assigned trainees
     const response = {
@@ -236,8 +221,6 @@ const getTrainerAssignment = async (req, res) => {
       activeTrainees: trainer.assignedTrainees?.length || 0
     };
 
-    console.log('Response prepared:', JSON.stringify(response, null, 2));
-    console.log('=== GET TRAINER ASSIGNMENT SUCCESS ===');
     res.json(response);
 
   } catch (error) {
@@ -445,16 +428,51 @@ const getAvailableTrainers = async (req, res) => {
 // @access  Private (Master Trainer)
 const getUnassignedTrainees = async (req, res) => {
   try {
-    const trainees = await User.find({
+    // Fetch from both schemas to avoid missing records
+    const userTrainees = await User.find({
       role: "trainee",
       isActive: true,
       assignedTrainer: null
-    }).select('name email employeeId department joiningDate');
+    }).select('name email employeeId department joiningDate author_id');
 
-    res.json(trainees);
+    // Return trainees from users only
+    res.json(userTrainees);
 
   } catch (error) {
     res.status(500).json({ message: "Server error", error: error.message });
+  }
+};
+
+// One-time sync: backfill users.assignedTrainer and trainer.assignedTrainees from Assignments
+const syncAssignmentsToUsers = async (req, res) => {
+  try {
+    const active = await Assignment.find({ status: 'active' });
+    let updatedTrainees = 0;
+    let updatedTrainers = 0;
+
+    for (const a of active) {
+      const trainerDoc = await User.findOne({ author_id: a.trainer }).select('_id');
+      if (!trainerDoc) continue;
+      const traineeDocs = await User.find({ author_id: { $in: a.trainees } }).select('_id');
+      const traineeIds = traineeDocs.map(t => t._id);
+      if (traineeIds.length === 0) continue;
+
+      const updT = await User.updateMany(
+        { _id: { $in: traineeIds } },
+        { $set: { assignedTrainer: trainerDoc._id, status: 'active' } }
+      );
+      updatedTrainees += updT.modifiedCount || 0;
+
+      const updR = await User.updateOne(
+        { _id: trainerDoc._id },
+        { $addToSet: { assignedTrainees: { $each: traineeIds } } }
+      );
+      updatedTrainers += updR.modifiedCount || 0;
+    }
+
+    res.json({ success: true, updatedTrainees, updatedTrainers, totalAssignments: active.length });
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Sync failed', error: error.message });
   }
 };
 
@@ -467,5 +485,6 @@ module.exports = {
   acknowledgeAssignment,
   completeAssignment,
   getAvailableTrainers,
-  getUnassignedTrainees
+  getUnassignedTrainees,
+  syncAssignmentsToUsers
 };

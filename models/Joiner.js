@@ -33,7 +33,7 @@ const joinerSchema = new mongoose.Schema({
   
   phone: {
     type: String,
-    required: [true, 'Phone number is required'],
+    required: false,
     trim: true,
     match: [/^[\+]?[0-9][\d]{0,15}$/, 'Please enter a valid phone number']
   },
@@ -67,7 +67,7 @@ const joinerSchema = new mongoose.Schema({
   
   role_assign: {
     type: String,
-    enum: ['SDM', 'SDI', 'SDF', 'OTHER'],
+    enum: ['SDM', 'SDI', 'SDF', 'SDB', 'OTHER'],
     default: 'OTHER'
   },
   
@@ -87,7 +87,7 @@ const joinerSchema = new mongoose.Schema({
   
   genre: {
     type: String,
-    enum: ['Male', 'Female', 'Other'],
+    enum: ['Male', 'Female', 'Other', 'male', 'female', 'other'],
     default: null
   },
   
@@ -105,7 +105,7 @@ const joinerSchema = new mongoose.Schema({
   
   joining_status: {
     type: String,
-    enum: ['pending', 'confirmed', 'cancelled', 'postponed'],
+    enum: ['pending', 'confirmed', 'cancelled', 'postponed', 'active'],
     default: 'pending'
   },
   
@@ -118,8 +118,15 @@ const joinerSchema = new mongoose.Schema({
   // Status and Workflow
   status: {
     type: String,
-    enum: ['pending', 'active', 'inactive', 'completed'],
+    enum: ['pending', 'active', 'inactive', 'completed', 'not_joined'],
     default: 'pending'
+  },
+  
+  notJoinedReason: {
+    type: String,
+    trim: true,
+    maxlength: [500, 'Not joined reason cannot exceed 500 characters'],
+    default: ''
   },
   
   // Account Creation
@@ -144,7 +151,8 @@ const joinerSchema = new mongoose.Schema({
   createdBy: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
-    required: true
+    required: false,
+    default: null
   },
   
   // Additional Notes
@@ -178,15 +186,20 @@ const joinerSchema = new mongoose.Schema({
 });
 
 // Index for better query performance
-joinerSchema.index({ email: 1 });
 joinerSchema.index({ joiningDate: 1 });
 joinerSchema.index({ department: 1 });
 joinerSchema.index({ status: 1 });
 joinerSchema.index({ createdBy: 1 });
 
-// Pre-save middleware to update updatedAt
+// Pre-save middleware to update updatedAt and normalize genre
 joinerSchema.pre('save', function(next) {
   this.updatedAt = Date.now();
+  
+  // Normalize genre field to capitalize first letter
+  if (this.genre) {
+    this.genre = this.genre.charAt(0).toUpperCase() + this.genre.slice(1).toLowerCase();
+  }
+  
   next();
 });
 
