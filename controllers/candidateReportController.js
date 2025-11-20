@@ -370,7 +370,8 @@ const getCandidatePerformance = async (req, res) => {
       yearOfPassout: user.yearOfPassout || user.yearOfPassing || null,
       yearOfPassing: user.yearOfPassout || user.yearOfPassing || null,
       department: user.department || null,
-      role: user.role || null
+      role: user.role || null,
+      isActive: user.isActive !== undefined ? user.isActive : true
     };
 
     // Fetch all reports for the candidate (get the latest one if multiple exist)

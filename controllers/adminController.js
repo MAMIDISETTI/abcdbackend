@@ -76,30 +76,30 @@ const createAdmin = async (req, res) => {
 // Promote user to different role
 const promoteUser = async (req, res) => {
   try {
-    console.log('=== PROMOTE USER REQUEST ===');
-    console.log('Request body:', req.body);
-    console.log('Request user:', req.user);
-    console.log('Request headers:', req.headers);
+    // console.log('=== PROMOTE USER REQUEST ===');
+    // console.log('Request body:', req.body);
+    // console.log('Request user:', req.user);
+    // console.log('Request headers:', req.headers);
     
     const { userId, newRole, reason } = req.body;
     const { id: adminId } = req.user;
     
-    console.log('Extracted data:', { userId, newRole, reason, adminId });
+    //console.log('Extracted data:', { userId, newRole, reason, adminId });
 
     // Find user to promote - check both UserNew and User models
-    console.log('Looking for user with ID:', userId);
+   // console.log('Looking for user with ID:', userId);
     let user = await UserNew.findById(userId);
-    console.log('Found in UserNew:', user ? { id: user._id, name: user.name, role: user.role } : 'Not found');
+   // console.log('Found in UserNew:', user ? { id: user._id, name: user.name, role: user.role } : 'Not found');
     
     // If not found in UserNew, try the old User model
     if (!user) {
       const User = require('../models/User');
       user = await User.findById(userId);
-      console.log('Found in User:', user ? { id: user._id, name: user.name, role: user.role } : 'Not found');
+     // console.log('Found in User:', user ? { id: user._id, name: user.name, role: user.role } : 'Not found');
     }
     
     if (!user) {
-      console.log('User not found in either model, returning 404');
+     // console.log('User not found in either model, returning 404');
       return res.status(404).json({
         message: 'User not found'
       });
@@ -145,7 +145,7 @@ const promoteUser = async (req, res) => {
           status: 'active'
         });
         
-        console.log(`Found ${activeAssignments.length} active assignments for trainer`);
+  //      console.log(`Found ${activeAssignments.length} active assignments for trainer`);
         
         // Get all trainee IDs from active assignments
         const allTraineeIds = [];
@@ -154,7 +154,7 @@ const promoteUser = async (req, res) => {
         });
         
         if (allTraineeIds.length > 0) {
-          console.log(`Unassigning ${allTraineeIds.length} trainees`);
+         // console.log(`Unassigning ${allTraineeIds.length} trainees`);
           
           // Find trainee ObjectIds by their author_ids
           const traineeObjects = await User.find({ author_id: { $in: allTraineeIds } }).select('_id');
@@ -275,10 +275,10 @@ const deactivateUser = async (req, res) => {
     const { userId, reason } = req.body;
     const { id: adminId } = req.user;
     
-    console.log('Extracted data:', { userId, reason, adminId });
+    // console.log('Extracted data:', { userId, reason, adminId });
 
-    // Find user to deactivate - check both UserNew and User models
-    console.log('Looking for user with ID:', userId);
+    // // Find user to deactivate - check both UserNew and User models
+    // console.log('Looking for user with ID:', userId);
     
     // First check if user exists in UserNew model (without validation)
     let userExists = await UserNew.findById(userId).select('_id name role isActive').lean();
@@ -488,11 +488,11 @@ const deactivateUser = async (req, res) => {
         status: 'deactivated'
       });
       
-      console.log('✅ Deactivated user record created:', deactivatedUserRecord._id);
-      console.log('=== END CREATING DEACTIVATED USER RECORD ===');
+      // console.log(' Deactivated user record created:', deactivatedUserRecord._id);
+      // console.log('=== END CREATING DEACTIVATED USER RECORD ===');
       
     } catch (deactivatedUserError) {
-      console.error('❌ Error creating deactivated user record:', deactivatedUserError);
+      console.error('Error creating deactivated user record:', deactivatedUserError);
       // Don't fail the deactivation if record creation fails
     }
 
@@ -545,7 +545,7 @@ const deactivateUser = async (req, res) => {
         );
         
         if (joinerUpdateResult) {
-          console.log(`✅ Successfully updated joiner status to inactive for: ${joinerUpdateResult.email || joinerUpdateResult.name}`);
+          console.log(` Successfully updated joiner status to inactive for: ${joinerUpdateResult.email || joinerUpdateResult.name}`);
           console.log('Updated joiner:', {
             email: joinerUpdateResult.email,
             name: joinerUpdateResult.name,
@@ -554,14 +554,14 @@ const deactivateUser = async (req, res) => {
             accountCreated: joinerUpdateResult.accountCreated
           });
         } else {
-          console.log('❌ Failed to update joiner status');
+          console.log('Failed to update joiner status');
         }
       } else {
-        console.log(`❌ No joiner record found for: ${updateResult.email} or ${updateResult.name}`);
+        console.log(`No joiner record found for: ${updateResult.email} or ${updateResult.name}`);
       }
       console.log('=== END DEACTIVATION JOINER UPDATE DEBUG ===');
     } catch (joinerError) {
-      console.error('❌ Error updating joiner status:', joinerError);
+      console.error('Error updating joiner status:', joinerError);
       // Don't fail the deactivation if joiner update fails
     }
 
@@ -601,9 +601,9 @@ const reactivateUser = async (req, res) => {
     const { id: adminId } = req.user;
 
     // Find user to reactivate - check both UserNew and User models
-    console.log('Looking for user with ID:', userId);
+  //  console.log('Looking for user with ID:', userId);
     let user = await UserNew.findById(userId);
-    console.log('Found in UserNew:', user ? { id: user._id, name: user.name, role: user.role } : 'Not found');
+  //  console.log('Found in UserNew:', user ? { id: user._id, name: user.name, role: user.role } : 'Not found');
     
     // If not found in UserNew, try the old User model
     if (!user) {
@@ -657,8 +657,8 @@ const reactivateUser = async (req, res) => {
 const getAllUsers = async (req, res) => {
   try {
     const { role, status, page = 1, limit = 10 } = req.query;
-    console.log('=== GET ALL USERS DEBUG ===');
-    console.log('Query params:', { role, status, page, limit });
+    // console.log('=== GET ALL USERS DEBUG ===');
+    // console.log('Query params:', { role, status, page, limit });
     
     // Build query - default to active users only
     const query = {};
@@ -677,7 +677,7 @@ const getAllUsers = async (req, res) => {
       query.isActive = true;
     }
     
-    console.log('Final query:', query);
+    //console.log('Final query:', query);
 
     // Get users from both UserNew and User models
     const User = require('../models/User');
@@ -713,15 +713,15 @@ const getAllUsers = async (req, res) => {
     );
     
     // Debug: Log users being returned
-    console.log('=== GET ALL USERS DEBUG ===');
-    console.log('Query used:', query);
-    console.log('Users found:', uniqueUsers.map(u => ({ name: u.name, email: u.email, role: u.role, isActive: u.isActive })));
-    console.log('=== END GET ALL USERS DEBUG ===');
+    // console.log('=== GET ALL USERS DEBUG ===');
+    // console.log('Query used:', query);
+    // console.log('Users found:', uniqueUsers.map(u => ({ name: u.name, email: u.email, role: u.role, isActive: u.isActive })));
+    // console.log('=== END GET ALL USERS DEBUG ===');
     
-    console.log('New users found:', newUsers.length);
-    console.log('Old users found:', oldUsers.length);
-    console.log('Total unique users:', uniqueUsers.length);
-    console.log('Users with isActive false:', uniqueUsers.filter(u => u.isActive === false).length);
+    // console.log('New users found:', newUsers.length);
+    // console.log('Old users found:', oldUsers.length);
+    // console.log('Total unique users:', uniqueUsers.length);
+    // console.log('Users with isActive false:', uniqueUsers.filter(u => u.isActive === false).length);
     
     // Apply pagination
     const startIndex = (page - 1) * limit;
@@ -731,8 +731,8 @@ const getAllUsers = async (req, res) => {
     // Get total count
     const total = uniqueUsers.length;
     
-    console.log('Returning users:', users.length);
-    console.log('=== END GET ALL USERS DEBUG ===');
+    // console.log('Returning users:', users.length);
+    // console.log('=== END GET ALL USERS DEBUG ===');
 
     res.json({
       users,
@@ -820,29 +820,29 @@ const getSystemStats = async (req, res) => {
     const actualDeactivatedUsers = uniqueUsers.filter(u => u.isActive === false).length;
     
     // Debug logging
-    console.log('=== SYSTEM STATS DEBUG ===');
-    console.log('Total users:', actualTotalUsers);
-    console.log('Active users:', actualActiveUsers);
-    console.log('Deactivated users:', actualDeactivatedUsers);
-    console.log('Users with isActive false:', uniqueUsers.filter(u => u.isActive === false).length);
-    console.log('Users by accountStatus:', uniqueUsers.reduce((acc, u) => {
-      const status = u.accountStatus || 'undefined';
-      acc[status] = (acc[status] || 0) + 1;
-      return acc;
-    }, {}));
-    console.log('Users by isActive:', uniqueUsers.reduce((acc, u) => {
-      const active = u.isActive;
-      acc[active] = (acc[active] || 0) + 1;
-      return acc;
-    }, {}));
+    // console.log('=== SYSTEM STATS DEBUG ===');
+    // console.log('Total users:', actualTotalUsers);
+    // console.log('Active users:', actualActiveUsers);
+    // console.log('Deactivated users:', actualDeactivatedUsers);
+    // console.log('Users with isActive false:', uniqueUsers.filter(u => u.isActive === false).length);
+    // console.log('Users by accountStatus:', uniqueUsers.reduce((acc, u) => {
+    //   const status = u.accountStatus || 'undefined';
+    //   acc[status] = (acc[status] || 0) + 1;
+    //   return acc;
+    // }, {}));
+    // console.log('Users by isActive:', uniqueUsers.reduce((acc, u) => {
+    //   const active = u.isActive;
+    //   acc[active] = (acc[active] || 0) + 1;
+    //   return acc;
+    // }, {}));
     
     // Calculate role stats (only for active users)
     const activeUsersForRoles = uniqueUsers.filter(user => user.isActive === true);
     
     // Debug: Log all users and their roles/status
-    console.log('=== ROLE STATS DEBUG ===');
-    console.log('All users:', uniqueUsers.map(u => ({ name: u.name, email: u.email, role: u.role, isActive: u.isActive })));
-    console.log('Active users for roles:', activeUsersForRoles.map(u => ({ name: u.name, email: u.email, role: u.role, isActive: u.isActive })));
+    // console.log('=== ROLE STATS DEBUG ===');
+    // console.log('All users:', uniqueUsers.map(u => ({ name: u.name, email: u.email, role: u.role, isActive: u.isActive })));
+    // console.log('Active users for roles:', activeUsersForRoles.map(u => ({ name: u.name, email: u.email, role: u.role, isActive: u.isActive })));
     
     const roleStats = activeUsersForRoles.reduce((acc, user) => {
       const role = user.role;
