@@ -724,8 +724,9 @@ const getAllUsers = async (req, res) => {
     // console.log('Users with isActive false:', uniqueUsers.filter(u => u.isActive === false).length);
     
     // Apply pagination
+    // If limit is very high (>= 1000), return all users without pagination for statistics
     const startIndex = (page - 1) * limit;
-    const endIndex = startIndex + limit;
+    const endIndex = limit >= 1000 ? uniqueUsers.length : startIndex + limit;
     const users = uniqueUsers.slice(startIndex, endIndex);
 
     // Get total count
@@ -850,8 +851,8 @@ const getSystemStats = async (req, res) => {
       return acc;
     }, {});
     
-    console.log('Role stats:', roleStats);
-    console.log('=== END ROLE STATS DEBUG ===');
+    // console.log('Role stats:', roleStats);
+    // console.log('=== END ROLE STATS DEBUG ===');
     
     const roleStatsArray = Object.entries(roleStats).map(([role, count]) => ({
       _id: role,

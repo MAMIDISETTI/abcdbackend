@@ -179,15 +179,44 @@ const bulkUploadJoiners = async (req, res) => {
       try {
         const joinerData = joiners_data[i];
         
-        
-        // // Generate author_id
-        const author_id = generateUUID();
-
         // Helper function to convert empty strings to null
         const nullIfEmpty = (value) => {
           if (value === '' || value === null || value === undefined) return null;
           return value;
         };
+        
+        // Helper function to validate UUID format
+        const isValidUUID = (str) => {
+          if (!str || typeof str !== 'string') return false;
+          const trimmed = str.trim();
+          if (trimmed === '') return false;
+          const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+          return uuidRegex.test(trimmed);
+        };
+        
+        // Try to get author_id from multiple possible field names
+        let providedAuthorId = null;
+        if (joinerData.author_id !== undefined && joinerData.author_id !== null && joinerData.author_id !== '') {
+          providedAuthorId = String(joinerData.author_id).trim();
+        } else if (joinerData.authorId !== undefined && joinerData.authorId !== null && joinerData.authorId !== '') {
+          providedAuthorId = String(joinerData.authorId).trim();
+        }
+        
+        // Use provided author_id if available and valid, otherwise generate a new one
+        let author_id;
+        if (providedAuthorId) {
+          if (isValidUUID(providedAuthorId)) {
+            author_id = providedAuthorId;
+          } else {
+            // Invalid UUID format - warn but still use it (user might have custom format)
+            // Or generate new one - let's generate new one to maintain UUID standard
+            errors.push(`Row ${i + 1}: Invalid author_id format "${providedAuthorId}". Expected UUID format (e.g., 8-4-4-4-12 hex). Generating new author_id.`);
+            author_id = generateUUID();
+          }
+        } else {
+          // Generate new author_id if not provided
+          author_id = generateUUID();
+        }
 
         // Clean and normalize email
         const email = (joinerData.candidate_personal_mail_id || '').toString().trim().toLowerCase();
@@ -346,16 +375,26 @@ const bulkUploadJoiners = async (req, res) => {
         }
 
         // Check if joiner already exists
-        const existingJoiner = await Joiner.findOne({
-          $or: [
-            { candidate_personal_mail_id: mappedData.candidate_personal_mail_id },
-            { author_id: mappedData.author_id }
-          ]
+        // First check by email
+        const existingJoinerByEmail = await Joiner.findOne({
+          candidate_personal_mail_id: mappedData.candidate_personal_mail_id
         });
-
-        if (existingJoiner) {
-          errors.push(`Row ${i + 1}: Joiner with email ${mappedData.candidate_personal_mail_id} or author_id ${mappedData.author_id} already exists`);
+        
+        if (existingJoinerByEmail) {
+          errors.push(`Row ${i + 1}: Joiner with email ${mappedData.candidate_personal_mail_id} already exists (existing author_id: ${existingJoinerByEmail.author_id || 'N/A'})`);
           continue;
+        }
+        
+        // Then check by author_id (only if we're using a provided one, not a newly generated one)
+        if (providedAuthorId && isValidUUID(providedAuthorId)) {
+          const existingJoinerByAuthorId = await Joiner.findOne({
+            author_id: mappedData.author_id
+          });
+          
+          if (existingJoinerByAuthorId) {
+            errors.push(`Row ${i + 1}: Joiner with author_id ${mappedData.author_id} already exists (email: ${existingJoinerByAuthorId.candidate_personal_mail_id || existingJoinerByAuthorId.email || 'N/A'})`);
+            continue;
+          }
         }
 
         processedJoiners.push(mappedData);

@@ -328,7 +328,7 @@ const createUserAccount = async (req, res) => {
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
 
-    // Create user account
+    // Create user account with the same author_id as joiner
     const user = await User.create({
       name: joiner.name,
       email: joiner.email,
@@ -339,7 +339,8 @@ const createUserAccount = async (req, res) => {
       employeeId: joiner.employeeId,
       genre: joiner.genre,
       joiningDate: joiner.joiningDate,
-      isActive: true
+      isActive: true,
+      author_id: joiner.author_id // Use the same author_id from joiner
     });
 
     // Update joiner record
@@ -712,26 +713,46 @@ const uploadCandidateReports = async (req, res) => {
   }
 };
 
-// @desc    Validate Google Sheets for candidate reports
+// @desc    Validate Google Sheets for candidate reports (single sheet with sub-sheets)
 // @route   POST /api/joiners/candidate-reports/validate-sheets
 // @access  Private (BOA)
 const validateCandidateReportsSheets = async (req, res) => {
   try {
     const axios = require('axios');
-    const { spread_sheet_name, data_sets_to_be_loaded, google_sheet_url } = req.body;
+    const { 
+      spread_sheet_name, 
+      data_sets_to_be_loaded, 
+      google_sheet_url
+    } = req.body;
 
     if (!spread_sheet_name || !data_sets_to_be_loaded) {
       return res.status(400).json({ 
         message: 'Missing required fields: spread_sheet_name, data_sets_to_be_loaded' 
       });
     }
+    
+    // Validate that data_sets_to_be_loaded is not empty
+    if (Array.isArray(data_sets_to_be_loaded) && data_sets_to_be_loaded.length === 0) {
+      return res.status(400).json({ 
+        message: 'data_sets_to_be_loaded cannot be empty. Please specify at least one sheet name.' 
+      });
+    }
 
     let reportsData = [];
 
-    // If Google Sheet URL is provided, try to fetch data
+    // If Google Sheet URL is provided, fetch data from the sheet (which contains sub-sheets)
     if (google_sheet_url && google_sheet_url.trim()) {
       try {
-        const response = await axios.get(google_sheet_url);
+        // Build URL with JSON config as query parameter
+        let url = google_sheet_url.trim();
+        const jsonConfig = {
+          spread_sheet_name: spread_sheet_name,
+          data_sets_to_be_loaded: data_sets_to_be_loaded
+        };
+        const jsonConfigParam = encodeURIComponent(JSON.stringify(jsonConfig));
+        url += (url.includes('?') ? '&' : '?') + 'json_config=' + jsonConfigParam;
+        
+        const response = await axios.get(url);
         
         // Check if response is HTML (error page)
         if (typeof response.data === 'string' && response.data.includes('<!DOCTYPE html>')) {
@@ -752,18 +773,92 @@ const validateCandidateReportsSheets = async (req, res) => {
           });
         }
 
-        // Extract reports data from Apps Script response
-        // Apps Script returns: { success: true, data: [{ author_id, learningReport, ... }] }
+        // The Apps Script should return data organized by sub-sheets
+        // Expected structure: { success: true, data: [{ author_id, learningReport, attendanceReport, groomingReport, ... }] }
+        // OR: { DailyQuizReports: [...], FortnightScores: [...], AttendanceReport: [...], GroomingReport: [...] }
+        
+        let extractedData = [];
+        
+        // Check if data is already combined by author_id
         if (sheetData.success && sheetData.data && Array.isArray(sheetData.data)) {
-          reportsData = sheetData.data;
+          extractedData = sheetData.data;
         } else if (Array.isArray(sheetData)) {
-          reportsData = sheetData;
+          extractedData = sheetData;
         } else if (sheetData.data && Array.isArray(sheetData.data)) {
-          reportsData = sheetData.data;
+          extractedData = sheetData.data;
         } else {
-          // If no data array found, return empty array (manual entry mode)
-          reportsData = [];
+          // If data is organized by sub-sheet names, combine them
+          const combinedData = {};
+          
+          // Learning Report sub-sheets: combine DailyQuizReports, FortnightScores, CourseExamScores, OnlineDemoReports, OfflineDemoReports
+          const learningSubSheets = ['DailyQuizReports', 'FortnightScores', 'CourseExamScores', 'OnlineDemoReports', 'OfflineDemoReports'];
+          learningSubSheets.forEach(sheetName => {
+            if (sheetData[sheetName] && Array.isArray(sheetData[sheetName])) {
+              sheetData[sheetName].forEach(item => {
+                const authorId = item.author_id || item.authorId;
+                if (authorId) {
+                  if (!combinedData[authorId]) {
+                    combinedData[authorId] = { author_id: authorId, learningReport: {} };
+                  }
+                  // Initialize learningReport if not exists
+                  if (!combinedData[authorId].learningReport) {
+                    combinedData[authorId].learningReport = {};
+                  }
+                  // Merge sub-sheet data into learningReport, preserving nested structures
+                  Object.keys(item).forEach(key => {
+                    if (key !== 'author_id' && key !== 'authorId') {
+                      // If key already exists and both are objects, merge them
+                      if (combinedData[authorId].learningReport[key] && 
+                          typeof combinedData[authorId].learningReport[key] === 'object' && 
+                          !Array.isArray(combinedData[authorId].learningReport[key]) &&
+                          typeof item[key] === 'object' && 
+                          !Array.isArray(item[key])) {
+                        combinedData[authorId].learningReport[key] = {
+                          ...combinedData[authorId].learningReport[key],
+                          ...item[key]
+                        };
+                      } else {
+                        // Otherwise, assign the value
+                        combinedData[authorId].learningReport[key] = item[key];
+                      }
+                    }
+                  });
+                }
+              });
+            }
+          });
+          
+          // Attendance Report sub-sheet
+          if (sheetData['AttendanceReport'] && Array.isArray(sheetData['AttendanceReport'])) {
+            sheetData['AttendanceReport'].forEach(item => {
+              const authorId = item.author_id || item.authorId;
+              if (authorId) {
+                if (!combinedData[authorId]) {
+                  combinedData[authorId] = { author_id: authorId };
+                }
+                combinedData[authorId].attendanceReport = item;
+              }
+            });
+          }
+          
+          // Grooming Report sub-sheet
+          if (sheetData['GroomingReport'] && Array.isArray(sheetData['GroomingReport'])) {
+            sheetData['GroomingReport'].forEach(item => {
+              const authorId = item.author_id || item.authorId;
+              if (authorId) {
+                if (!combinedData[authorId]) {
+                  combinedData[authorId] = { author_id: authorId };
+                }
+                combinedData[authorId].groomingReport = item;
+              }
+            });
+          }
+          
+          // Convert combined data object to array
+          extractedData = Object.values(combinedData);
         }
+        
+        reportsData = extractedData;
 
       } catch (error) {
         return res.status(400).json({

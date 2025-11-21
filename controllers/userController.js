@@ -192,7 +192,9 @@ const createUser = async (req, res) => {
       createdBy, onboardingChecklist, company_allocated_details, dayPlanTasks,
       fortnightExams, dailyQuizzes, courseLevelExams,
       // Password management
-      tempPassword, passwordChanged
+      tempPassword, passwordChanged,
+      // author_id from joiner
+      author_id
     } = req.body;
 
     // // Check if user already exists
@@ -257,6 +259,11 @@ const createUser = async (req, res) => {
     // Only add employeeId if it's not null or undefined
     if (employeeId && employeeId !== null && employeeId !== 'null') {
       userData.employeeId = employeeId;
+    }
+
+    // Use author_id from joiner if provided, otherwise User model will generate one
+    if (author_id && author_id.trim() !== '') {
+      userData.author_id = author_id.trim();
     }
 
     const user = await User.create(userData);

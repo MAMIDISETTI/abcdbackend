@@ -75,7 +75,9 @@ app.use(
 connectDB();
 
 // Middleware
-app.use(express.json());
+// Increase JSON body parser limit to handle large candidate reports data (50MB)
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 app.use(cookieParser());
 
 // Routes
