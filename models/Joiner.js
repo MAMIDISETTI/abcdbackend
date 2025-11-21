@@ -35,13 +35,31 @@ const joinerSchema = new mongoose.Schema({
     type: String,
     required: false,
     trim: true,
-    match: [/^[\+]?[0-9][\d]{0,15}$/, 'Please enter a valid phone number']
+    default: null,
+    validate: {
+      validator: function(v) {
+        // Allow null, undefined, or empty string
+        if (!v || v === null || v === undefined || v.trim() === '') return true;
+        // If provided, validate format
+        return /^[\+]?[0-9][\d]{0,15}$/.test(v);
+      },
+      message: 'Please enter a valid phone number'
+    }
   },
   
   phone_number: {
     type: String,
     trim: true,
-    match: [/^[\+]?[0-9][\d]{0,15}$/, 'Please enter a valid phone number']
+    default: null,
+    validate: {
+      validator: function(v) {
+        // Allow null, undefined, or empty string
+        if (!v || v === null || v === undefined || v.trim() === '') return true;
+        // If provided, validate format
+        return /^[\+]?[0-9][\d]{0,15}$/.test(v);
+      },
+      message: 'Please enter a valid phone number'
+    }
   },
   
   // Department and Role Information

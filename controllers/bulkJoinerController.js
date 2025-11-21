@@ -157,6 +157,13 @@ const validateGoogleSheets = async (req, res) => {
 // @access  Private (BOA)
 const bulkUploadJoiners = async (req, res) => {
   try {
+    // Validate authentication
+    if (!req.user || !req.user.id) {
+      return res.status(401).json({
+        message: 'Authentication required. Please log in again.'
+      });
+    }
+
     const { 
       spread_sheet_name, 
       data_sets_to_be_loaded, 
@@ -166,7 +173,15 @@ const bulkUploadJoiners = async (req, res) => {
 
     if (!joiners_data || !Array.isArray(joiners_data)) {
       return res.status(400).json({ 
-        message: 'joiners_data is required and must be an array' 
+        message: 'joiners_data is required and must be an array',
+        received: typeof joiners_data,
+        isArray: Array.isArray(joiners_data)
+      });
+    }
+
+    if (joiners_data.length === 0) {
+      return res.status(400).json({ 
+        message: 'joiners_data array is empty. Please provide at least one joiner record.' 
       });
     }
 
@@ -333,39 +348,39 @@ const bulkUploadJoiners = async (req, res) => {
 
         // Validate phone number exists and is not empty
         // Handle number 0 as valid (though unlikely for phone)
+        // Make phone_number optional - if not provided, set to null
         if (phoneNumber === null || 
             phoneNumber === undefined || 
             phoneNumber === '' ||
             (typeof phoneNumber === 'string' && phoneNumber.trim() === '')) {
-          // Log available keys and values for debugging
-          const availableKeys = Object.keys(joinerData).join(', ');
-          const phoneValue = joinerData.phone_number;
-          errors.push(`Row ${i + 1}: phone_number is required (value: ${phoneValue}, type: ${typeof phoneValue}). Available fields: ${availableKeys}`);
-          continue;
-        }
+          // Phone number is optional - set to null instead of erroring
+          mappedData.phone = null;
+          mappedData.phone_number = null;
+          // Continue processing without phone number
+        } else {
+          // Convert to string and validate phone format - more flexible regex
+          const phoneStr = phoneNumber.toString().trim();
+          
+          // Remove any non-digit characters except + at the start, then remove + if present
+          let cleanedPhone = phoneStr.replace(/[^\d+]/g, '');
+          if (cleanedPhone.startsWith('+')) {
+            cleanedPhone = cleanedPhone.substring(1);
+          }
+          
+          // Validate phone format - must be 10-15 digits
+          const phoneRegex = /^[0-9]{10,15}$/;
+          if (!phoneRegex.test(cleanedPhone)) {
+            errors.push(`Row ${i + 1}: Invalid phone format: ${phoneStr} (cleaned: ${cleanedPhone}). Phone must be 10-15 digits.`);
+            continue;
+          }
 
-        // Convert to string and validate phone format - more flexible regex
-        const phoneStr = phoneNumber.toString().trim();
-        
-        // Remove any non-digit characters except + at the start, then remove + if present
-        let cleanedPhone = phoneStr.replace(/[^\d+]/g, '');
-        if (cleanedPhone.startsWith('+')) {
-          cleanedPhone = cleanedPhone.substring(1);
+          // Update joinerData with the found phone number (use cleaned version if needed)
+          joinerData.phone_number = cleanedPhone || phoneStr;
+          
+          // Update mappedData with cleaned phone number
+          mappedData.phone = cleanedPhone || phoneStr;
+          mappedData.phone_number = cleanedPhone || phoneStr;
         }
-        
-        // Validate phone format - must be 10-15 digits
-        const phoneRegex = /^[0-9]{10,15}$/;
-        if (!phoneRegex.test(cleanedPhone)) {
-          errors.push(`Row ${i + 1}: Invalid phone format: ${phoneStr} (cleaned: ${cleanedPhone}). Phone must be 10-15 digits.`);
-          continue;
-        }
-
-        // Update joinerData with the found phone number (use cleaned version if needed)
-        joinerData.phone_number = cleanedPhone || phoneStr;
-        
-        // Update mappedData with cleaned phone number
-        mappedData.phone = cleanedPhone || phoneStr;
-        mappedData.phone_number = cleanedPhone || phoneStr;
 
         // Validate role_assign if provided
         if (joinerData.role_assign && joinerData.role_assign.trim() !== '' && 
